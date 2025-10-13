@@ -1,7 +1,7 @@
-name: Auto Update JioTV and ZEE5 Cookies (Sync and Force Update Every 4 Hours)
+name: Auto Update JioTV Cookies (Fixed Path and Force Update Every 12 Hours)
 on:
   schedule:
-    - cron: '30 */4 * * *' # Har 4 ghante (5:30, 9:30, 1:30, 5:30, 9:30 IST)
+    - cron: '0 */12 * * *' # Har 12 ghante (5:30 AM aur 5:30 PM IST)
   workflow_dispatch: # Manual trigger
 jobs:
   update-cookies:
@@ -21,116 +21,73 @@ jobs:
           echo "File size: $(wc -c < stream.json) bytes"
           echo "Full stream.json preview (first 1000 chars):"
           head -c 1000 stream.json | tr -d '\n' | sed 's/"/\\"/g' | fold -w 80
-          echo "Searching for JITENDRAUNATTI.JIOTV.hmac.hdnea.value and JITENDRAUNATTI.ZEE5.Cookie..."
-          if jq -e '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json >/dev/null 2>&1 && jq -e '.JITENDRAUNATTI.ZEE5.Cookie' stream.json >/dev/null 2>&1; then
-            echo "✓ Both JIOTV and ZEE5 cookies found in file!"
+          echo "Searching for JITENDRAUNATTI.JIOTV.hmac.hdnea.value..."
+          if jq -e '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json >/dev/null 2>&1; then
+            echo "✓ JITENDRAUNATTI.JIOTV.hmac.hdnea.value found in file!"
           else
-            echo "✗ One or both cookies NOT found. Dumping first 200 lines:"
+            echo "✗ JITENDRAUNATTI.JIOTV.hmac.hdnea.value NOT found. Dumping first 200 lines:"
             head -n 200 stream.json
             exit 1
           fi
-      - name: Extract Cookies and Update Jiotv.json
+      - name: Extract Cookie and Update Jiotv.json
         run: |
-          echo "=== Extracting JioTV Cookie ==="
-          NEW_JIOTV_COOKIE=$(jq -r '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json 2>/dev/null || echo "null")
-          if [ "$NEW_JIOTV_COOKIE" = "null" ]; then
-            echo "✗ ERROR: No valid JioTV cookie found. Using previous value."
-            NEW_JIOTV_COOKIE=$(jq -r '.[0].cookie' Jiotv.json 2>/dev/null || echo "")
+          echo "=== Extracting Cookie ==="
+          # Extract cookie from JITENDRAUNATTI.JIOTV.hmac.hdnea.value with error handling
+          NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json 2>/dev/null || echo "null")
+          if [ "$NEW_COOKIE" = "null" ]; then
+            echo "✗ ERROR: No valid cookie found in JITENDRAUNATTI.JIOTV.hmac.hdnea.value. Update skipped."
+            echo "Raw stream.json content (first 200 lines):"
+            head -n 200 stream.json
+            exit 0
           fi
-          echo "✓ Full JioTV cookie extracted: $NEW_JIOTV_COOKIE"
+          echo "✓ Full cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Jiotv.json ==="
-          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo "Jiotv.json not found, creating new."
+          cp Jiotv.json Jiotv_backup.json
+          # Validate Jiotv.json and attempt detailed recovery
           if [ ! -s Jiotv_backup.json ]; then
             echo "✗ ERROR: Jiotv.json is empty or missing. Creating a basic structure."
             echo '[]' > Jiotv_backup.json
           fi
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting aggressive recovery..."
-            tail -n +7223 Jiotv_backup.json > temp_backup.json 2>/dev/null || echo '[]' > temp_backup.json
+            echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting recovery..."
+            tail -n +7313 Jiotv_backup.json > temp_backup.json
             mv temp_backup.json Jiotv_backup.json
             if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-              echo "✗ ERROR: Recovery failed. Creating a fallback JSON with JioTV cookie."
-              echo '[{"cookie": "'"$NEW_JIOTV_COOKIE"'"}]' > Jiotv_backup.json
+              echo "✗ ERROR: Recovery failed. Dumping problematic area (lines 7313-7323):"
+              sed -n '7313,7323p' Jiotv_backup.json
+              echo "Creating a fallback JSON with cookie."
+              echo '[{"cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
             fi
           fi
-          # Force update cookie field with error handling
-          jq --arg jiocookie "$NEW_JIOTV_COOKIE" 'map(if .cookie then .cookie = $jiocookie else . + {"cookie": $jiocookie} end)' Jiotv_backup.json > Jiotv_updated.json 2>/dev/null || {
-            echo "✗ ERROR: jq update failed for Jiotv.json. Creating fallback."
-            echo '[{"cookie": "'"$NEW_JIOTV_COOKIE"'"}]' > Jiotv_updated.json
-          }
+          # Update only the cookie field in each object, preserving other fields
+          jq --arg new_cookie "$NEW_COOKIE" 'map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end)' Jiotv_backup.json > Jiotv_updated.json
           mv Jiotv_updated.json Jiotv.json
-          git add Jiotv.json
 
-          echo "✓ Jiotv.json update complete. New cookie: $NEW_JIOTV_COOKIE"
+          echo "✓ Update complete. New cookie: $NEW_COOKIE"
           echo "Preview of updated Jiotv.json (first entry's cookie):"
           jq '.[0].cookie' Jiotv.json 2>/dev/null || echo "No valid JSON to preview"
           echo "Full updated Jiotv.json preview (first 200 chars):"
           head -c 200 Jiotv.json
 
-          if ! diff -q Jiotv_backup.json Jiotv.json 2>/dev/null; then
-            echo "✓ Jiotv.json file changed!"
+          if ! diff -q Jiotv_backup.json Jiotv.json; then
+            echo "✓ File changed!"
           else
-            echo "✗ No change detected in Jiotv.json, but forcing commit."
-          fi
-      - name: Extract Cookies and Update Zee5.json
-        run: |
-          echo "=== Extracting ZEE5 Cookie ==="
-          NEW_ZEE5_COOKIE=$(jq -r '.JITENDRAUNATTI.ZEE5.Cookie' stream.json 2>/dev/null || echo "null")
-          if [ "$NEW_ZEE5_COOKIE" = "null" ]; then
-            echo "✗ ERROR: No valid ZEE5 cookie found. Using previous value."
-            NEW_ZEE5_COOKIE=$(jq -r '.[0].cookie' Zee5.json 2>/dev/null || echo "")
-          fi
-          echo "✓ Full ZEE5 cookie extracted: $NEW_ZEE5_COOKIE"
-
-          echo "=== Updating Zee5.json ==="
-          cp Zee5.json Zee5_backup.json 2>/dev/null || echo "Zee5.json not found, creating new."
-          if [ ! -s Zee5_backup.json ]; then
-            echo "✗ ERROR: Zee5.json is empty or missing. Creating a basic structure."
-            echo '[]' > Zee5_backup.json
-          fi
-          if ! jq -e . Zee5_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Zee5.json is invalid JSON. Attempting recovery..."
-            tail -n +10 Zee5_backup.json > temp_backup.json 2>/dev/null || echo '[]' > temp_backup.json
-            mv temp_backup.json Zee5_backup.json
-            if ! jq -e . Zee5_backup.json >/dev/null 2>&1; then
-              echo "✗ ERROR: Recovery failed. Creating a fallback JSON with ZEE5 cookie."
-              echo '[{"cookie": "'"$NEW_ZEE5_COOKIE"'"}]' > Zee5_backup.json
-            fi
-          fi
-          # Update only the cookie field in Zee5.json
-          jq --arg zee5cookie "$NEW_ZEE5_COOKIE" 'map(if .cookie then .cookie = $zee5cookie else . + {"cookie": $zee5cookie} end)' Zee5_backup.json > Zee5_updated.json
-          mv Zee5_updated.json Zee5.json
-          git add Zee5.json
-
-          echo "✓ Zee5.json update complete. New cookie: $NEW_ZEE5_COOKIE"
-          echo "Preview of updated Zee5.json (first entry's cookie):"
-          jq '.[0].cookie' Zee5.json 2>/dev/null || echo "No valid JSON to preview"
-          echo "Full updated Zee5.json preview (first 200 chars):"
-          head -c 200 Zee5.json
-
-          if ! diff -q Zee5_backup.json Zee5.json 2>/dev/null; then
-            echo "✓ Zee5.json file changed!"
-          else
-            echo "✗ No change detected in Zee5.json."
+            echo "✗ No change detected (possible issue with structure or same cookie)."
           fi
       - name: Force Commit Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add Jiotv.json Zee5.json
+          git add Jiotv.json
           # Always force commit with a hidden file to ensure push
           touch .force-update-timestamp
           git add .force-update-timestamp
-          git commit -m "Force auto-update JioTV and ZEE5 cookies in Jiotv.json and Zee5.json (new: ${{ github.sha }}) --no-verify" || {
+          git commit -m "Force auto-update cookies in Jiotv.json (new: ${{ github.sha }}) --no-verify" || {
             echo "✗ ERROR: Commit failed. Creating fallback commit."
             echo '{"update": "forced"}' > .force-commit.json
             git add .force-commit.json
-            git commit -m "Fallback force update (new: ${{ github.sha }}) --no-verify" || {
-              echo "✗ FATAL: Fallback commit also failed. Dumping git status:"
-              git status
-              exit 1
-            }
+            git commit -m "Fallback force update (new: ${{ github.sha }}) --no-verify"
           }
           git push || {
             echo "✗ ERROR: Git push failed. Checking GITHUB_TOKEN or repo permissions."
@@ -140,3 +97,4 @@ jobs:
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
