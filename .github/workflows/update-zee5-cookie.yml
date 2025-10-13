@@ -14,21 +14,27 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Check Zee5.json Existence and Structure
         run: |
-          echo "=== Checking Zee5.json ==="
-          if [ -f Zee5.json ]; then
-            echo "✓ Zee5.json exists"
-            echo "Current Zee5.json content (first 200 chars):"
-            head -c 200 Zee5.json
-            if jq -e . Zee5.json >/dev/null 2>&1; then
-              echo "✓ Zee5.json is valid JSON"
-              echo "Current cookie in Zee5.json (first entry):"
-              jq '.[0].cookie' Zee5.json 2>/dev/null || echo "No cookie field or invalid structure"
-            else
-              echo "✗ WARNING: Zee5.json is invalid JSON. Will initialize later."
-            fi
+          echo "=== Checking for Zee5.json ==="
+          ZEE5_FILE=$(find . -maxdepth 1 -type f -iname "zee5.json" | head -n 1)
+          if [ -z "$ZEE5_FILE" ]; then
+            echo "✗ ERROR: Zee5.json not found in repository root. Creating Zee5.json."
+            echo '[{"cookie": "placeholder"}]' > Zee5.json
+            ZEE5_FILE="./Zee5.json"
           else
-            echo "✗ WARNING: Zee5.json does not exist. Will create during update."
+            echo "✓ Found file: $ZEE5_FILE"
+            mv "$ZEE5_FILE" Zee5.json # Normalize to Zee5.json
           fi
+          echo "Current Zee5.json content (first 500 chars):"
+          head -c 500 Zee5.json || echo "Empty or unreadable file"
+          if jq -e . Zee5.json >/dev/null 2>&1; then
+            echo "✓ Zee5.json is valid JSON"
+            echo "Current cookie in Zee5.json (first entry):"
+            jq -r '.[0].cookie // "none"' Zee5.json
+          else
+            echo "✗ WARNING: Zee5.json is invalid JSON. Initializing with empty array."
+            echo '[{"cookie": "placeholder"}]' > Zee5.json
+          fi
+          echo "ZEE5_FILE=Zee5.json" >> $GITHUB_ENV
       - name: Fetch and Debug Cookie URL
         run: |
           echo "=== Fetching from https://doctor-strange.developed-for-wanda.workers.dev/ ==="
@@ -44,8 +50,8 @@ jobs:
           if jq -e '.JITENDRAUNATTI.ZEE5.Cookie' stream.json >/dev/null 2>&1; then
             echo "✓ JITENDRAUNATTI.ZEE5.Cookie found in file!"
           else
-            echo "✗ JITENDRAUNATTI.ZEE5.Cookie NOT found. Dumping first 200 lines:"
-            head -n 200 stream.json
+            echo "✗ JITENDRAUNATTI.ZEE5.Cookie NOT found. Dumping full stream.json:"
+            cat stream.json
             exit 1
           fi
       - name: Extract Cookie and Update Zee5.json
@@ -55,36 +61,31 @@ jobs:
           NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.ZEE5.Cookie' stream.json 2>/dev/null || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
             echo "✗ ERROR: No valid cookie found in JITENDRAUNATTI.ZEE5.Cookie. Update skipped."
-            echo "Raw stream.json content (first 200 lines):"
-            head -n 200 stream.json
+            echo "Raw stream.json content:"
+            cat stream.json
             exit 0
           fi
           echo "✓ Full cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Zee5.json ==="
-          # Create backup or initialize Zee5.json if missing
-          cp Zee5.json Zee5_backup.json 2>/dev/null || echo '[]' > Zee5_backup.json
-          # Validate Zee5_backup.json
-          if ! jq -e . Zee5_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Zee5.json is invalid JSON. Initializing with empty array."
-            echo '[]' > Zee5_backup.json
-          fi
-          # Compare new cookie with existing cookie (if any)
-          EXISTING_COOKIE=$(jq -r '.[0].cookie // "none"' Zee5_backup.json 2>/dev/null)
+          # Create backup
+          cp Zee5.json Zee5_backup.json
+          # Get existing cookie for comparison
+          EXISTING_COOKIE=$(jq -r '.[0].cookie // "none"' Zee5.json 2>/dev/null)
           echo "Existing cookie in Zee5.json: $EXISTING_COOKIE"
           if [ "$NEW_COOKIE" = "$EXISTING_COOKIE" ]; then
             echo "✓ No change needed: New cookie matches existing cookie."
             exit 0
           fi
           # Update cookie field in Zee5.json
-          jq --arg new_cookie "$NEW_COOKIE" 'if length == 0 then [{"cookie": $new_cookie}] else map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end) end' Zee5_backup.json > Zee5_updated.json
+          jq --arg new_cookie "$NEW_COOKIE" 'if length == 0 then [{"cookie": $new_cookie}] else map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end) end' Zee5.json > Zee5_updated.json
           mv Zee5_updated.json Zee5.json
 
           echo "✓ Update complete. New cookie: $NEW_COOKIE"
-          echo "Preview of updated Zee5.json (first entry's cookie):"
-          jq '.[0].cookie' Zee5.json 2>/dev/null || echo "No valid JSON to preview"
-          echo "Full updated Zee5.json preview (first 200 chars):"
-          head -c 200 Zee5.json
+          echo "Updated Zee5.json content (first 500 chars):"
+          head -c 500 Zee5.json
+          echo "Updated cookie in Zee5.json (first entry):"
+          jq -r '.[0].cookie // "none"' Zee5.json
 
           # Check if Zee5.json changed
           if ! diff -q Zee5_backup.json Zee5.json >/dev/null 2>&1; then
@@ -92,6 +93,8 @@ jobs:
             touch .zee5-changed
           else
             echo "✗ ERROR: Zee5.json update failed (no changes detected after update)."
+            echo "Dumping Zee5.json for debugging:"
+            cat Zee5.json
             exit 1
           fi
       - name: Force Commit Changes
@@ -112,7 +115,7 @@ jobs:
               git status
               exit 1
             }
-            echo "✓ Changes committed and pushed!"
+            echo "✓ Changes committed and pushed to main branch!"
           else
             echo "✓ No changes to commit. Skipping push."
           fi
