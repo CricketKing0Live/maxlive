@@ -32,7 +32,7 @@ jobs:
       - name: Extract Cookie and Update Zee5.json
         run: |
           echo "=== Extracting Cookie ==="
-          # Extract cookie from JITENDRAUNATTI.ZEE5.Cookie with error handling
+          # Extract cookie from JITENDRAUNATTI.ZEE5.Cookie
           NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.ZEE5.Cookie' stream.json 2>/dev/null || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
             echo "✗ ERROR: No valid cookie found in JITENDRAUNATTI.ZEE5.Cookie. Update skipped."
@@ -43,22 +43,14 @@ jobs:
           echo "✓ Full cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Zee5.json ==="
-          cp Zee5.json Zee5_backup.json || echo '[]' > Zee5_backup.json
-          # Validate Zee5.json and attempt detailed recovery
-          if [ ! -s Zee5_backup.json ]; then
-            echo "✗ ERROR: Zee5.json is empty or missing. Creating a basic structure."
-            echo '[]' > Zee5_backup.json
-          fi
+          # Create backup or initialize Zee5.json if missing
+          cp Zee5.json Zee5_backup.json 2>/dev/null || echo '[]' > Zee5_backup.json
+          # Validate Zee5_backup.json
           if ! jq -e . Zee5_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Zee5.json is invalid JSON. Attempting recovery..."
-            tail -n +7313 Zee5_backup.json > temp_backup.json 2>/dev/null || echo '[]' > temp_backup.json
-            mv temp_backup.json Zee5_backup.json
-            if ! jq -e . Zee5_backup.json >/dev/null 2>&1; then
-              echo "✗ ERROR: Recovery failed. Creating a fallback JSON with cookie."
-              echo '[{"cookie": "'"$NEW_COOKIE"'"}]' > Zee5_backup.json
-            fi
+            echo '[]' > Zee5_backup.json
           fi
-          # Update only the cookie field in each object, preserving other fields
+          # Update cookie field in Zee5.json
           jq --arg new_cookie "$NEW_COOKIE" 'map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end)' Zee5_backup.json > Zee5_updated.json
           mv Zee5_updated.json Zee5.json
 
@@ -68,30 +60,35 @@ jobs:
           echo "Full updated Zee5.json preview (first 200 chars):"
           head -c 200 Zee5.json
 
-          if ! diff -q Zee5_backup.json Zee5.json; then
+          # Check if Zee5.json changed
+          if ! diff -q Zee5_backup.json Zee5.json >/dev/null 2>&1; then
             echo "✓ File changed!"
+            touch .file-changed
           else
-            echo "✗ No change detected (possible issue with structure or same cookie)."
+            echo "✓ No change detected (same cookie or structure)."
           fi
       - name: Force Commit Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add Zee5.json
-          # Always force commit with a hidden file to ensure push
-          touch .force-update-timestamp
-          git add .force-update-timestamp
-          git commit -m "Force auto-update cookies in Zee5.json (new: ${{ github.sha }}) --no-verify" || {
-            echo "✗ ERROR: Commit failed. Creating fallback commit."
-            echo '{"update": "forced"}' > .force-commit.json
-            git add .force-commit.json
-            git commit -m "Fallback force update (new: ${{ github.sha }}) --no-verify"
-          }
-          git push || {
-            echo "✗ ERROR: Git push failed. Checking GITHUB_TOKEN or repo permissions."
-            echo "Dumping git status:"
-            git status
-            exit 1
-          }
+          # Only commit if Zee5.json changed
+          if [ -f .file-changed ]; then
+            git add Zee5.json
+            git commit -m "Auto-update cookies in Zee5.json (new: ${{ github.sha }})" || {
+              echo "✗ ERROR: Commit failed. Creating fallback commit."
+              echo '{"update": "forced", "timestamp": "'$(date -u +%F_%T)'"}' > .force-commit.json
+              git add .force-commit.json
+              git commit -m "Fallback force update (new: ${{ github.sha }})"
+            }
+            git push || {
+              echo "✗ ERROR: Git push failed. Check GITHUB_TOKEN or repo permissions."
+              git status
+              exit 1
+            }
+          else
+            echo "✓ No changes to commit. Skipping push."
+          fi
+          # Clean up temporary files
+          rm -f stream.json Zee5_backup.json .file-changed .force-commit.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
