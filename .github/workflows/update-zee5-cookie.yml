@@ -35,11 +35,13 @@ jobs:
       - name: Fetch and Debug Cookie URL
         run: |
           echo "=== Fetching from https://doctor-strange.developed-for-wanda.workers.dev/ ==="
-          curl -s -v https://doctor-strange.developed-for-wanda.workers.dev/ > stream.json 2> curl.log
+          curl -s -v -o stream.json https://doctor-strange.developed-for-wanda.workers.dev/ 2> curl.log
+          CURL_STATUS=$?
+          echo "Curl exit status: $CURL_STATUS"
           echo "Curl diagnostics:"
           cat curl.log
-          if [ ! -s stream.json ]; then
-            echo "✗ ERROR: Failed to fetch stream.json. File is empty."
+          if [ $CURL_STATUS -ne 0 ] || [ ! -s stream.json ]; then
+            echo "✗ ERROR: Failed to fetch stream.json (status: $CURL_STATUS). File is empty or curl failed."
             echo "Using fallback cookie."
             NEW_COOKIE="fallback_hdntl=exp=$(date +%s + 3600)~acl=%2f*~data=hdntl~hmac=fallback_hash_$(date +%s)"
           else
@@ -83,11 +85,10 @@ jobs:
           echo "✓ Update complete. New content (full):"
           cat Zee5.json
           echo "Updated cookie: $(jq -r 'if type == "array" then .[0].cookie // "none" else .cookie // "none" end' Zee5.json 2>/dev/null || echo "none")"
-
-          # Always commit to ensure update
+          # Always commit
           touch .zee5-changed
           echo "✓ Marked for commit (force update)."
-      - name: Force Commit Changes
+      - name: Force Commit and Push Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
@@ -102,7 +103,7 @@ jobs:
               git commit -m "Fallback update Zee5.json (new: ${{ github.sha }})"
             }
             echo "=== Attempting git push ==="
-            git push || {
+            git push --force || {
               echo "✗ ERROR: Git push failed. Dumping status and logs:"
               git status
               git log --oneline -5
