@@ -57,7 +57,9 @@ jobs:
           # Update only the cookie field in Zee5.json
           jq --arg zee5cookie "$NEW_ZEE5_COOKIE" 'map(if .cookie then .cookie = $zee5cookie else . + {"cookie": $zee5cookie} end)' Zee5_backup.json > Zee5_updated.json
           mv Zee5_updated.json Zee5.json
+          # Explicitly add Zee5.json and ignore untracked files
           git add Zee5.json
+          git ls-files --others --exclude-standard > .git/exclude
 
           echo "✓ Zee5.json update complete. New cookie: $NEW_ZEE5_COOKIE"
           echo "Preview of updated Zee5.json (first entry's cookie):"
@@ -74,6 +76,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          # Explicitly add only Zee5.json
           git add Zee5.json
           # Always force commit with a hidden file to ensure push
           touch .force-update-timestamp
