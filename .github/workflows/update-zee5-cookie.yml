@@ -1,16 +1,18 @@
-name: Auto Update Zee5 Cookies and Playlist (Fixed Path and Force Update Every 12 Hours)
+name: Auto Update Zee5 Cookies (Fixed Path and Force Update Every 12 Hours)
 on:
   schedule:
     - cron: '0 */12 * * *' # Every 12 hours (5:30 AM and 5:30 PM IST)
   workflow_dispatch: # Manual trigger
 jobs:
-  update-cookies-and-playlist:
+  update-cookies:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main # Ensure we work on the main branch
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch and Debug new URL
+      - name: Fetch and Debug Cookie URL
         run: |
           echo "=== Fetching from https://doctor-strange.developed-for-wanda.workers.dev/ ==="
           curl -s https://doctor-strange.developed-for-wanda.workers.dev/ > stream.json
@@ -47,10 +49,10 @@ jobs:
           cp Zee5.json Zee5_backup.json 2>/dev/null || echo '[]' > Zee5_backup.json
           # Validate Zee5_backup.json
           if ! jq -e . Zee5_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Zee5.json is invalid JSON. Attempting recovery..."
+            echo "✗ WARNING: Zee5.json is invalid JSON. Initializing with empty array."
             echo '[]' > Zee5_backup.json
           fi
-          # Update cookie field in Zee5.json
+          # Update cookie field in Zee5.json (array of objects with cookie field)
           jq --arg new_cookie "$NEW_COOKIE" 'map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end)' Zee5_backup.json > Zee5_updated.json
           mv Zee5_updated.json Zee5.json
 
@@ -67,107 +69,14 @@ jobs:
           else
             echo "✓ No change in Zee5.json (same cookie or structure)."
           fi
-
-          # Extract headers for playlist fetch
-          REFERER=$(jq -r '.JITENDRAUNATTI.ZEE5.Referer' stream.json 2>/dev/null || echo "https://www.zee5.com/")
-          ORIGIN=$(jq -r '.JITENDRAUNATTI.ZEE5.Origin' stream.json 2>/dev/null || echo "https://www.zee5.com/")
-          USER_AGENT=$(jq -r '.JITENDRAUNATTI.ZEE5."User-Agent"' stream.json 2>/dev/null || echo "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-          echo "✓ Headers extracted - Referer: $REFERER, Origin: $ORIGIN, User-Agent: $USER_AGENT"
-          echo "REFERER=$REFERER" >> $GITHUB_ENV
-          echo "ORIGIN=$ORIGIN" >> $GITHUB_ENV
-          echo "USER_AGENT=$USER_AGENT" >> $GITHUB_ENV
-          echo "NEW_COOKIE=$NEW_COOKIE" >> $GITHUB_ENV
-      - name: Fetch Zee5 Playlist using Cookie
-        run: |
-          echo "=== Fetching Zee5 Playlist using new cookie ==="
-          if [ "$NEW_COOKIE" = "null" ]; then
-            echo "✗ Skipping playlist fetch: No valid cookie."
-            exit 0
-          fi
-
-          # Fetch playlist from Zee5 API (homepage endpoint for content/sections)
-          PLAYLIST_RESPONSE=$(curl -s -X GET \
-            -H "Cookie: $NEW_COOKIE" \
-            -H "Referer: $REFERER" \
-            -H "Origin: $ORIGIN" \
-            -H "User-Agent: $USER_AGENT" \
-            -H "Accept: application/json" \
-            "https://www.zee5.com/api/v1/web/homepage?platform=web&store=web&nod=0&device_id=&version=1.0.0&platform_id=1&content_format=JSON&country=IN&language=en&feedType=homepage&limit=10")
-
-          if [ ! -s <(echo "$PLAYLIST_RESPONSE") ]; then
-            echo "✗ ERROR: Failed to fetch playlist. Response is empty."
-            echo "Raw response preview:"
-            echo "$PLAYLIST_RESPONSE" | head -c 500
-            exit 1
-          fi
-
-          echo "File size of playlist response: $(echo "$PLAYLIST_RESPONSE" | wc -c) bytes"
-          echo "Full playlist response preview (first 1000 chars):"
-          echo "$PLAYLIST_RESPONSE" | head -c 1000 | tr -d '\n' | sed 's/"/\\"/g' | fold -w 80
-
-          # Save raw response as backup
-          echo "$PLAYLIST_RESPONSE" > Zee5_raw_playlist.json
-
-          # Extract playlist items (e.g., from 'sections' or 'content' – adjust jq based on actual structure)
-          # Assuming structure has 'sections' with 'items' array; fallback to empty if invalid
-          if ! echo "$PLAYLIST_RESPONSE" | jq -e . >/dev/null 2>&1; then
-            echo "✗ WARNING: Invalid JSON in playlist response. Using empty array."
-            echo '[]' > Zee5_playlist.json
-          else
-            # Extract sample playlist: Flatten sections' items into simple array
-            echo "$PLAYLIST_RESPONSE" | jq '
-              if .sections then
-                [.sections[]?.items?[]? | select(.title and .id) | {title: .title, id: .id, type: (.type // "unknown"), image: (.image // null)}]
-              elif .content then
-                [.content[]? | select(.title and .id) | {title: .title, id: .id, type: (.type // "unknown"), image: (.image // null)}]
-              else
-                []
-              end
-            ' > Zee5_playlist.json
-
-            # If extraction failed, fallback to full content
-            if [ ! -s Zee5_playlist.json ] || ! jq -e . Zee5_playlist.json >/dev/null 2>&1; then
-              echo "✗ WARNING: Playlist extraction failed. Saving full response as array."
-              echo "[{\"full_response\": $(echo "$PLAYLIST_RESPONSE" | jq -c .)}]" > Zee5_playlist.json
-            fi
-          fi
-
-          echo "✓ Playlist update complete."
-          echo "Preview of Zee5_playlist.json (first 3 items):"
-          jq '.[0:3]' Zee5_playlist.json 2>/dev/null || echo "No valid JSON to preview"
-          echo "Full Zee5_playlist.json preview (first 200 chars):"
-          head -c 200 Zee5_playlist.json
-
-          # Check if playlist changed (compare to previous if exists)
-          if [ -f Zee5_playlist_backup.json ]; then
-            cp Zee5_playlist.json Zee5_playlist_backup.json
-            if ! diff -q Zee5_playlist_backup.json Zee5_playlist.json >/dev/null 2>&1; then
-              echo "✓ Zee5_playlist.json file changed!"
-              touch .playlist-changed
-            else
-              echo "✓ No change in Zee5_playlist.json."
-            fi
-          else
-            echo "✓ New Zee5_playlist.json created!"
-            touch .playlist-changed
-          fi
       - name: Force Commit Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          # Commit if any changes detected
-          CHANGES_MADE=false
+          # Commit if Zee5.json changed
           if [ -f .zee5-changed ]; then
             git add Zee5.json
-            CHANGES_MADE=true
-          fi
-          if [ -f .playlist-changed ]; then
-            git add Zee5_playlist.json
-            CHANGES_MADE=true
-          fi
-          if [ "$CHANGES_MADE" = true ]; then
-            git commit -m "Auto-update Zee5 cookies and playlist (new: ${{ github.sha }})" || {
+            git commit -m "Auto-update Zee5 cookies in Zee5.json (new: ${{ github.sha }})" || {
               echo "✗ ERROR: Commit failed. Creating fallback commit."
               echo '{"update": "forced", "timestamp": "'$(date -u +%F_%T)'"}' > .force-commit.json
               git add .force-commit.json
@@ -183,6 +92,6 @@ jobs:
             echo "✓ No changes to commit. Skipping push."
           fi
           # Clean up temporary files
-          rm -f stream.json Zee5_backup.json Zee5_raw_playlist.json .zee5-changed .playlist-changed .force-commit.json
+          rm -f stream.json Zee5_backup.json .zee5-changed .force-commit.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
