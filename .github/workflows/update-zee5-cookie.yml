@@ -1,4 +1,4 @@
-name: Auto Update Zee5 Cookies (Fixed Path and Force Update Every 12 Hours)
+name: Auto Update Zee5 Cookie in Playlist (Preserve Existing Structure)
 on:
   schedule:
     - cron: '0 */12 * * *' # Every 12 hours (5:30 AM and 5:30 PM IST)
@@ -23,12 +23,12 @@ jobs:
               EXISTING_COOKIE=$(jq -r 'if type == "array" and length > 0 then .[0].cookie // .[0].hdntl // "none" else .cookie // .hdntl // "none" end' Zee5.json 2>/dev/null || echo "none")
               echo "Current cookie: $EXISTING_COOKIE"
             else
-              echo "✗ Zee5.json is invalid JSON (contains '----' or other issue). Initializing."
-              echo '[{"cookie": "placeholder"}]' > Zee5.json
+              echo "✗ Zee5.json is invalid JSON (e.g., contains '----'). Initializing with minimal structure."
+              echo '{"cookie": "placeholder"}' > Zee5.json
             fi
           else
-            echo "✗ Zee5.json not found. Creating with default structure."
-            echo '[{"cookie": "placeholder"}]' > Zee5.json
+            echo "✗ Zee5.json not found. Creating with minimal structure."
+            echo '{"cookie": "placeholder"}' > Zee5.json
           fi
           echo "Current Zee5.json after initialization (full):"
           cat Zee5.json
@@ -50,7 +50,7 @@ jobs:
             echo "✗ JITENDRAUNATTI.ZEE5.Cookie NOT found. Exiting."
             exit 1
           fi
-      - name: Extract Cookie and Force Update Zee5.json
+      - name: Extract Cookie and Update Zee5.json
         run: |
           echo "=== Extracting Cookie ==="
           NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.ZEE5.Cookie' stream.json 2>/dev/null || echo "null")
@@ -60,16 +60,27 @@ jobs:
           fi
           echo "✓ New cookie extracted: $NEW_COOKIE"
 
-          echo "=== Force Updating Zee5.json ==="
-          # Always update Zee5.json with new cookie
-          jq --arg new_cookie "$NEW_COOKIE" '[{"cookie": $new_cookie}]' Zee5.json > Zee5_updated.json
+          echo "=== Updating Zee5.json Cookie ==="
+          # Backup current file
+          cp Zee5.json Zee5_backup.json
+          # Get existing cookie for logging
+          EXISTING_COOKIE=$(jq -r 'if type == "array" and length > 0 then .[0].cookie // .[0].hdntl // "none" else .cookie // .hdntl // "none" end' Zee5.json 2>/dev/null || echo "none")
+          echo "Existing cookie: $EXISTING_COOKIE"
+          # Update cookie field, preserving other fields
+          if jq -e 'type == "array"' Zee5.json >/dev/null 2>&1; then
+            # Array: Update cookie in each object
+            jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie | del(.hdntl))' Zee5.json > Zee5_updated.json
+          else
+            # Single object: Update cookie field
+            jq --arg new_cookie "$NEW_COOKIE" '.cookie = $new_cookie | del(.hdntl)' Zee5.json > Zee5_updated.json
+          fi
           mv Zee5_updated.json Zee5.json
 
-          echo "✓ Force update complete. New content (full):"
+          echo "✓ Update complete. New content (full):"
           cat Zee5.json
-          echo "Updated cookie: $(jq -r '.[0].cookie' Zee5.json 2>/dev/null || echo "none")"
+          echo "Updated cookie: $(jq -r 'if type == "array" then .[0].cookie // "none" else .cookie // "none" end' Zee5.json 2>/dev/null || echo "none")"
 
-          # Mark for commit
+          # Always commit to ensure update
           touch .zee5-changed
           echo "✓ Marked for commit (force update)."
       - name: Force Commit Changes
@@ -78,11 +89,11 @@ jobs:
           git config --local user.name "github-actions[bot]"
           if [ -f .zee5-changed ]; then
             git add Zee5.json
-            git commit -m "Force auto-update Zee5 cookies in Zee5.json (new: ${{ github.sha }})" || {
+            git commit -m "Update Zee5 cookie in Zee5.json playlist (new: ${{ github.sha }})" || {
               echo "✗ ERROR: Commit failed. Trying fallback."
               echo '{"update": "forced", "timestamp": "'$(date -u +%F_%T)'", "cookie": "'"$NEW_COOKIE"'"}' > .force-commit.json
               git add .force-commit.json
-              git commit -m "Fallback force update Zee5.json (new: ${{ github.sha }})"
+              git commit -m "Fallback update Zee5.json (new: ${{ github.sha }})"
             }
             git push || {
               echo "✗ ERROR: Git push failed. Dumping status:"
