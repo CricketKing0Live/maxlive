@@ -1,7 +1,7 @@
 name: Auto Update Zee5 Cookie in Playlist (Preserve Existing Structure)
 on:
   schedule:
-    - cron: '0 */4 * * *' # Every 4 hours (12 AM, 4 AM, 8 AM, 12 PM, 4 PM, 8 PM IST)
+    - cron: '0 */4 * * *' # Every 4 hours (0:00, 4:00, 8:00, 12:00, 16:00, 20:00 UTC)
   workflow_dispatch: # Manual trigger
 jobs:
   update-cookies:
@@ -35,36 +35,30 @@ jobs:
       - name: Fetch and Debug Cookie URL
         run: |
           echo "=== Fetching from https://doctor-strange.developed-for-wanda.workers.dev/ ==="
-          curl -s -v -o stream.json https://doctor-strange.developed-for-wanda.workers.dev/ 2> curl.log
-          CURL_STATUS=$?
-          echo "Curl exit status: $CURL_STATUS"
-          echo "Curl diagnostics:"
-          cat curl.log
-          if [ $CURL_STATUS -ne 0 ] || [ ! -s stream.json ]; then
-            echo "✗ ERROR: Failed to fetch stream.json (status: $CURL_STATUS). File is empty or curl failed."
-            echo "Using fallback cookie."
-            NEW_COOKIE="fallback_hdntl=exp=$(date +%s + 3600)~acl=%2f*~data=hdntl~hmac=fallback_hash_$(date +%s)"
+          curl -s https://doctor-strange.developed-for-wanda.workers.dev/ > stream.json
+          if [ ! -s stream.json ]; then
+            echo "✗ ERROR: Failed to fetch stream.json. File is empty."
+            exit 1
+          fi
+          echo "File size: $(wc -c < stream.json) bytes"
+          echo "Full stream.json content:"
+          cat stream.json
+          echo "Searching for JITENDRAUNATTI.ZEE5.Cookie..."
+          if jq -e '.JITENDRAUNATTI.ZEE5.Cookie' stream.json >/dev/null 2>&1; then
+            echo "✓ JITENDRAUNATTI.ZEE5.Cookie found!"
           else
-            echo "File size: $(wc -c < stream.json) bytes"
-            echo "Full stream.json content:"
-            cat stream.json
-            echo "Searching for JITENDRAUNATTI.ZEE5.Cookie..."
-            if jq -e '.JITENDRAUNATTI.ZEE5.Cookie' stream.json >/dev/null 2>&1; then
-              echo "✓ JITENDRAUNATTI.ZEE5.Cookie found!"
-            else
-              echo "✗ JITENDRAUNATTI.ZEE5.Cookie NOT found. Using fallback cookie."
-              NEW_COOKIE="fallback_hdntl=exp=$(date +%s + 3600)~acl=%2f*~data=hdntl~hmac=fallback_hash_$(date +%s)"
-            fi
+            echo "✗ JITENDRAUNATTI.ZEE5.Cookie NOT found. Exiting."
+            exit 1
           fi
       - name: Extract Cookie and Update Zee5.json
         run: |
           echo "=== Extracting Cookie ==="
-          NEW_COOKIE=${NEW_COOKIE:-$(jq -r '.JITENDRAUNATTI.ZEE5.Cookie' stream.json 2>/dev/null || echo "fallback_hdntl=exp=$(date +%s + 3600)~acl=%2f*~data=hdntl~hmac=fallback_hash_$(date +%s)")}
-          if [ "$NEW_COOKIE" = "" ]; then
-            echo "✗ ERROR: No valid cookie found. Using fallback."
-            NEW_COOKIE="fallback_hdntl=exp=$(date +%s + 3600)~acl=%2f*~data=hdntl~hmac=fallback_hash_$(date +%s)"
+          NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.ZEE5.Cookie' stream.json 2>/dev/null || echo "null")
+          if [ "$NEW_COOKIE" = "null" ]; then
+            echo "✗ ERROR: No valid cookie found. Update skipped."
+            exit 0
           fi
-          echo "✓ New cookie: $NEW_COOKIE"
+          echo "✓ New cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Zee5.json Cookie ==="
           # Backup current file
@@ -85,33 +79,30 @@ jobs:
           echo "✓ Update complete. New content (full):"
           cat Zee5.json
           echo "Updated cookie: $(jq -r 'if type == "array" then .[0].cookie // "none" else .cookie // "none" end' Zee5.json 2>/dev/null || echo "none")"
-          # Always commit
+
+          # Always commit to ensure update
           touch .zee5-changed
           echo "✓ Marked for commit (force update)."
-      - name: Force Commit and Push Changes
+      - name: Force Commit Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           if [ -f .zee5-changed ]; then
             git add Zee5.json
-            echo "=== Git diff of staged changes ==="
-            git diff --staged
             git commit -m "Update Zee5 cookie in Zee5.json playlist (new: ${{ github.sha }})" || {
               echo "✗ ERROR: Commit failed. Trying fallback."
               echo '{"update": "forced", "timestamp": "'$(date -u +%F_%T)'", "cookie": "'"$NEW_COOKIE"'"}' > .force-commit.json
               git add .force-commit.json
               git commit -m "Fallback update Zee5.json (new: ${{ github.sha }})"
             }
-            echo "=== Attempting git push ==="
-            git push --force || {
-              echo "✗ ERROR: Git push failed. Dumping status and logs:"
+            git push || {
+              echo "✗ ERROR: Git push failed. Dumping status:"
               git status
-              git log --oneline -5
               exit 1
             }
             echo "✓ Changes committed and pushed to main!"
           fi
           # Clean up
-          rm -f stream.json Zee5_backup.json .zee5-changed .force-commit.json curl.log
+          rm -f stream.json Zee5_backup.json .zee5-changed .force-commit.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
