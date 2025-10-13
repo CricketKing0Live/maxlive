@@ -1,4 +1,4 @@
-name: Auto Update JioTV Cookies (Debug and Force Playlist Update Every 12 Hours)
+name: Auto Update JioTV Cookies (Targeted Cookie Update Every 12 Hours)
 on:
   schedule:
     - cron: '0 */12 * * *' # Har 12 ghante (5:30 AM aur 5:30 PM IST)
@@ -15,8 +15,8 @@ jobs:
           echo "=== Fetching from https://doctor-strange.developed-for-wanda.workers.dev/ ==="
           curl -s https://doctor-strange.developed-for-wanda.workers.dev/ > stream.json
           echo "File size: $(wc -c < stream.json) bytes"
-          echo "Full stream.json preview (first 1000 chars):"
-          head -c 1000 stream.json | tr -d '\n' | sed 's/"/\\"/g' | fold -w 80
+          echo "Preview (first 500 chars):"
+          head -c 500 stream.json | tr -d '\n' | sed 's/"/\\"/g' | fold -w 80
           echo "Searching for JIOTV.hmac.hdnea.value..."
           if jq -e '.JIOTV.hmac.hdnea.value' stream.json >/dev/null 2>&1; then
             echo "✓ JIOTV.hmac.hdnea.value found in file!"
@@ -38,10 +38,10 @@ jobs:
 
           echo "=== Updating Jiotv.json ==="
           cp Jiotv.json Jiotv_backup.json
-          # Validate Jiotv.json and attempt detailed recovery
+          # Validate Jiotv.json and attempt recovery
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting recovery..."
-            # Try to fix by removing last few lines
+            # Remove last few lines to fix potential syntax error
             tail -n +7320 Jiotv_backup.json > temp_backup.json
             mv temp_backup.json Jiotv_backup.json
             if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
@@ -51,7 +51,7 @@ jobs:
               exit 1
             fi
           fi
-          # Update cookie in all entries
+          # Update only the cookie field in each object, preserving other fields
           jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie)' Jiotv_backup.json > Jiotv_updated.json
           mv Jiotv_updated.json Jiotv.json
 
