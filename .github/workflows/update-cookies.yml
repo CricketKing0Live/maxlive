@@ -1,4 +1,4 @@
-name: Auto Update JioTV and ZEE5 Cookies (Sync and Force Update Every 4 Hours)
+name: Auto Update JioTV and ZEE5 Cookies (Force Sync Every 4 Hours)
 on:
   schedule:
     - cron: '30 */4 * * *' # Har 4 ghante (5:30, 9:30, 1:30, 5:30, 9:30 IST)
@@ -46,15 +46,16 @@ jobs:
             echo '[]' > Jiotv_backup.json
           fi
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting recovery..."
-            tail -n +7273 Jiotv_backup.json > temp_backup.json
+            echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting aggressive recovery..."
+            # Extra aggressive recovery: Skip last 100 lines if needed
+            tail -n +7223 Jiotv_backup.json > temp_backup.json
             mv temp_backup.json Jiotv_backup.json
             if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
               echo "✗ ERROR: Recovery failed. Creating a fallback JSON with JioTV cookie."
               echo '[{"cookie": "'"$NEW_JIOTV_COOKIE"'"}]' > Jiotv_backup.json
             fi
           fi
-          # Update only the cookie field in Jiotv.json
+          # Force update cookie field
           jq --arg jiocookie "$NEW_JIOTV_COOKIE" 'map(if .cookie then .cookie = $jiocookie else . + {"cookie": $jiocookie} end)' Jiotv_backup.json > Jiotv_updated.json
           mv Jiotv_updated.json Jiotv.json
 
@@ -67,7 +68,7 @@ jobs:
           if ! diff -q Jiotv_backup.json Jiotv.json 2>/dev/null; then
             echo "✓ Jiotv.json file changed!"
           else
-            echo "✗ No change detected in Jiotv.json."
+            echo "✗ No change detected in Jiotv.json, forcing update."
           fi
       - name: Extract Cookies and Update Zee5.json
         run: |
@@ -107,7 +108,7 @@ jobs:
           if ! diff -q Zee5_backup.json Zee5.json 2>/dev/null; then
             echo "✓ Zee5.json file changed!"
           else
-            echo "✗ No change detected in Zee5.json."
+            echo "✗ No change detected in Zee5.json, forcing update."
           fi
       - name: Force Commit Changes
         run: |
