@@ -15,26 +15,23 @@ jobs:
       - name: Check Zee5.json Existence and Structure
         run: |
           echo "=== Checking for Zee5.json ==="
-          ZEE5_FILE=$(find . -maxdepth 1 -type f -iname "zee5.json" | head -n 1)
-          if [ -z "$ZEE5_FILE" ]; then
-            echo "✗ ERROR: Zee5.json not found in repository root. Creating Zee5.json."
-            echo '[{"cookie": "placeholder"}]' > Zee5.json
-            ZEE5_FILE="./Zee5.json"
+          if [ -f Zee5.json ]; then
+            echo "✓ Found file: Zee5.json"
+            echo "Current Zee5.json content (full):"
+            cat Zee5.json
+            if jq -e . Zee5.json >/dev/null 2>&1; then
+              echo "✓ Zee5.json is valid JSON"
+              echo "Current cookie in Zee5.json (if any):"
+              # Try common structures: array or single object
+              jq -r 'if type == "array" then .[0].cookie // .[0].hdntl // "none" else .cookie // .hdntl // "none" end' Zee5.json
+            else
+              echo "✗ WARNING: Zee5.json is invalid JSON. Initializing with default structure."
+              echo '[{"cookie": "placeholder"}]' > Zee5.json
+            fi
           else
-            echo "✓ Found file: $ZEE5_FILE"
-            mv "$ZEE5_FILE" Zee5.json # Normalize to Zee5.json
-          fi
-          echo "Current Zee5.json content (first 500 chars):"
-          head -c 500 Zee5.json || echo "Empty or unreadable file"
-          if jq -e . Zee5.json >/dev/null 2>&1; then
-            echo "✓ Zee5.json is valid JSON"
-            echo "Current cookie in Zee5.json (first entry):"
-            jq -r '.[0].cookie // "none"' Zee5.json
-          else
-            echo "✗ WARNING: Zee5.json is invalid JSON. Initializing with empty array."
+            echo "✗ WARNING: Zee5.json not found. Creating with default structure."
             echo '[{"cookie": "placeholder"}]' > Zee5.json
           fi
-          echo "ZEE5_FILE=Zee5.json" >> $GITHUB_ENV
       - name: Fetch and Debug Cookie URL
         run: |
           echo "=== Fetching from https://doctor-strange.developed-for-wanda.workers.dev/ ==="
@@ -71,21 +68,27 @@ jobs:
           # Create backup
           cp Zee5.json Zee5_backup.json
           # Get existing cookie for comparison
-          EXISTING_COOKIE=$(jq -r '.[0].cookie // "none"' Zee5.json 2>/dev/null)
+          EXISTING_COOKIE=$(jq -r 'if type == "array" then .[0].cookie // .[0].hdntl // "none" else .cookie // .hdntl // "none" end' Zee5.json 2>/dev/null)
           echo "Existing cookie in Zee5.json: $EXISTING_COOKIE"
           if [ "$NEW_COOKIE" = "$EXISTING_COOKIE" ]; then
             echo "✓ No change needed: New cookie matches existing cookie."
             exit 0
           fi
-          # Update cookie field in Zee5.json
-          jq --arg new_cookie "$NEW_COOKIE" 'if length == 0 then [{"cookie": $new_cookie}] else map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end) end' Zee5.json > Zee5_updated.json
+          # Update Zee5.json based on its structure
+          if jq -e 'type == "array"' Zee5.json >/dev/null 2>&1; then
+            # Array structure: Update or add cookie field
+            jq --arg new_cookie "$NEW_COOKIE" 'if length == 0 then [{"cookie": $new_cookie}] else map(if .cookie or .hdntl then . + {"cookie": $new_cookie} | del(.hdntl) else . + {"cookie": $new_cookie} end) end' Zee5.json > Zee5_updated.json
+          else
+            # Single object structure: Update or add cookie field
+            jq --arg new_cookie "$NEW_COOKIE" '. + {"cookie": $new_cookie} | del(.hdntl)' Zee5.json > Zee5_updated.json
+          fi
           mv Zee5_updated.json Zee5.json
 
           echo "✓ Update complete. New cookie: $NEW_COOKIE"
-          echo "Updated Zee5.json content (first 500 chars):"
-          head -c 500 Zee5.json
-          echo "Updated cookie in Zee5.json (first entry):"
-          jq -r '.[0].cookie // "none"' Zee5.json
+          echo "Updated Zee5.json content (full):"
+          cat Zee5.json
+          echo "Updated cookie in Zee5.json:"
+          jq -r 'if type == "array" then .[0].cookie // .[0].hdntl // "none" else .cookie // .hdntl // "none" end' Zee5.json
 
           # Check if Zee5.json changed
           if ! diff -q Zee5_backup.json Zee5.json >/dev/null 2>&1; then
