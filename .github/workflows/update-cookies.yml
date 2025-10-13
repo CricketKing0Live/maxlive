@@ -1,7 +1,7 @@
-name: Auto Update JioTV and ZEE5 Cookies (Final Fix for Separate Playlists Every 12 Hours)
+name: Auto Update JioTV and ZEE5 Cookies (Sync and Force Update Every 4 Hours)
 on:
   schedule:
-    - cron: '0 */12 * * *' # Har 12 ghante (5:30 AM aur 5:30 PM IST)
+    - cron: '30 */4 * * *' # Har 4 ghante (5:30, 9:30, 1:30, 5:30, 9:30 IST)
   workflow_dispatch: # Manual trigger
 jobs:
   update-cookies:
@@ -47,7 +47,6 @@ jobs:
           fi
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting recovery..."
-            # Aggressive recovery: Skip last 50 lines if needed
             tail -n +7273 Jiotv_backup.json > temp_backup.json
             mv temp_backup.json Jiotv_backup.json
             if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
