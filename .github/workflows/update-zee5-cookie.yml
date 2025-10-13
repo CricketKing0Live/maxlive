@@ -1,7 +1,7 @@
 name: Auto Update Zee5 Cookie in Playlist (Preserve Existing Structure)
 on:
   schedule:
-    - cron: '0 */12 * * *' # Every 12 hours (5:30 AM and 5:30 PM IST)
+    - cron: '0 */4 * * *' # Every 4 hours (12 AM, 4 AM, 8 AM, 12 PM, 4 PM, 8 PM IST)
   workflow_dispatch: # Manual trigger
 jobs:
   update-cookies:
