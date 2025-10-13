@@ -1,4 +1,4 @@
-name: Auto Update JioTV Cookies (Debug, Force Update, and Fallback Every 12 Hours)
+name: Auto Update JioTV Cookies (Fixed Path and Force Update Every 12 Hours)
 on:
   schedule:
     - cron: '0 */12 * * *' # Har 12 ghante (5:30 AM aur 5:30 PM IST)
@@ -21,21 +21,21 @@ jobs:
           echo "File size: $(wc -c < stream.json) bytes"
           echo "Full stream.json preview (first 1000 chars):"
           head -c 1000 stream.json | tr -d '\n' | sed 's/"/\\"/g' | fold -w 80
-          echo "Searching for JIOTV.hmac.hdnea.value..."
-          if jq -e '.JIOTV.hmac.hdnea.value' stream.json >/dev/null 2>&1; then
-            echo "✓ JIOTV.hmac.hdnea.value found in file!"
+          echo "Searching for JITENDRAUNATTI.JIOTV.hmac.hdnea.value..."
+          if jq -e '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json >/dev/null 2>&1; then
+            echo "✓ JITENDRAUNATTI.JIOTV.hmac.hdnea.value found in file!"
           else
-            echo "✗ JIOTV.hmac.hdnea.value NOT found. Dumping first 200 lines:"
+            echo "✗ JITENDRAUNATTI.JIOTV.hmac.hdnea.value NOT found. Dumping first 200 lines:"
             head -n 200 stream.json
             exit 1
           fi
       - name: Extract Cookie and Update Jiotv.json
         run: |
           echo "=== Extracting Cookie ==="
-          # Extract cookie from JIOTV.hmac.hdnea.value with error handling
-          NEW_COOKIE=$(jq -r '.JIOTV.hmac.hdnea.value' stream.json 2>/dev/null || echo "null")
+          # Extract cookie from JITENDRAUNATTI.JIOTV.hmac.hdnea.value with error handling
+          NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json 2>/dev/null || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
-            echo "✗ ERROR: No valid cookie found in JIOTV.hmac.hdnea.value. Update skipped."
+            echo "✗ ERROR: No valid cookie found in JITENDRAUNATTI.JIOTV.hmac.hdnea.value. Update skipped."
             echo "Raw stream.json content (first 200 lines):"
             head -n 200 stream.json
             exit 0
@@ -51,7 +51,6 @@ jobs:
           fi
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Jiotv.json is invalid JSON (line 7323 issue?). Attempting recovery..."
-            # More aggressive recovery: Skip last 10 lines and validate
             tail -n +7313 Jiotv_backup.json > temp_backup.json
             mv temp_backup.json Jiotv_backup.json
             if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
