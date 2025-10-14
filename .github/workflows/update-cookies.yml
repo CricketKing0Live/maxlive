@@ -55,24 +55,36 @@ jobs:
           echo "✓ Update complete. New cookie: $NEW_COOKIE"
           echo "Preview of updated Jiotv.json (first entry's cookie):"
           jq '.[0].cookie' Jiotv.json 2>/dev/null || echo "No valid JSON to preview"
-      - name: Clean Up Temporary Files
+      - name: Clean Up Temporary Files and Unstaged Changes
         run: |
+          # Remove temporary files
           rm -f stream.json Jiotv_backup.json
           echo "✓ Cleaned up temporary files (stream.json, Jiotv_backup.json)"
-      - name: Force Commit and Push Changes
+          # Clean any other unstaged changes to avoid rebase issues
+          git restore --staged . 2>/dev/null
+          git clean -fd 2>/dev/null
+          echo "✓ Cleared unstaged changes and untracked files"
+      - name: Commit and Push Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # Pull latest changes to avoid conflicts
-          git pull --rebase origin main
+          # Pull latest changes with rebase
+          git pull --rebase origin main || {
+            echo "✗ ERROR: Git pull --rebase failed. Dumping git status:"
+            git status
+            exit 1
+          }
           
+          # Stage Jiotv.json
           git add Jiotv.json
+          
           # Commit only if Jiotv.json has changes
           if git diff --staged --quiet; then
             echo "✓ No changes to Jiotv.json. Skipping commit."
             exit 0
           fi
+          
           git commit -m "Auto-update cookies in Jiotv.json (new: ${{ github.sha }})"
           git push || {
             echo "✗ ERROR: Git push failed. Checking GITHUB_TOKEN or repo permissions."
