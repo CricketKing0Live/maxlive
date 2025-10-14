@@ -37,6 +37,7 @@ jobs:
           NEW_COOKIE=$(jq -r '.JITENDRAUNATTI.JIOTV.hmac.hdnea.value' stream.json 2>/dev/null || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
             echo "✗ ERROR: No valid cookie found in JITENDRAUNATTI.JIOTV.hmac.hdnea.value. Update skipped."
+            rm -f stream.json
             exit 0
           fi
           echo "✓ Full cookie extracted: $NEW_COOKIE"
@@ -55,37 +56,36 @@ jobs:
           echo "✓ Update complete. New cookie: $NEW_COOKIE"
           echo "Preview of updated Jiotv.json (first entry's cookie):"
           jq '.[0].cookie' Jiotv.json 2>/dev/null || echo "No valid JSON to preview"
-      - name: Clean Up Temporary Files and Unstaged Changes
+
+          # Stage Jiotv.json to avoid unstaged changes
+          git add Jiotv.json
+      - name: Clean Up Temporary Files
         run: |
           # Remove temporary files
           rm -f stream.json Jiotv_backup.json
           echo "✓ Cleaned up temporary files (stream.json, Jiotv_backup.json)"
-          # Clean any other unstaged changes to avoid rebase issues
-          git restore --staged . 2>/dev/null
-          git clean -fd 2>/dev/null
-          echo "✓ Cleared unstaged changes and untracked files"
       - name: Commit and Push Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
+
+          # Check if Jiotv.json has changes
+          if git diff --staged --quiet; then
+            echo "✓ No changes to Jiotv.json. Skipping commit."
+            exit 0
+          fi
+
+          # Commit changes to Jiotv.json
+          git commit -m "Auto-update cookies in Jiotv.json (new: ${{ github.sha }})"
+
           # Pull latest changes with rebase
           git pull --rebase origin main || {
             echo "✗ ERROR: Git pull --rebase failed. Dumping git status:"
             git status
             exit 1
           }
-          
-          # Stage Jiotv.json
-          git add Jiotv.json
-          
-          # Commit only if Jiotv.json has changes
-          if git diff --staged --quiet; then
-            echo "✓ No changes to Jiotv.json. Skipping commit."
-            exit 0
-          fi
-          
-          git commit -m "Auto-update cookies in Jiotv.json (new: ${{ github.sha }})"
+
+          # Push changes
           git push || {
             echo "✗ ERROR: Git push failed. Checking GITHUB_TOKEN or repo permissions."
             echo "Dumping git status:"
