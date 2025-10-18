@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests  # For fetching JSON from URL
+          pip install requests  # For fetching JSON/string from URL
 
       - name: Create and Run Update Script
         run: |
@@ -37,30 +37,44 @@ jobs:
           import requests
           import os
 
-          # URL to fetch JSON containing cookie
+          # URL to fetch cookie (JSON or string)
           url = "https://jo-json.vodep39240327.workers.dev/"
 
           # JSON file path (repo root)
           json_file_path = "jiotv.json"
 
           try:
-              # Fetch JSON from URL
-              print("Fetching JSON from URL...")
+              # Fetch data from URL
+              print("Fetching data from URL...")
               response = requests.get(url, timeout=10)
               response.raise_for_status()
-              json_data = response.json()  # Parse JSON response
+              raw_response = response.text.strip()
+              print(f"Raw response: {raw_response[:200]}...")  # Log first 200 chars for debugging
 
-              # Extract __hdnea__ cookie from the 'url' field
-              if "url" not in json_data:
-                  raise ValueError("No 'url' field found in JSON response.")
-              
-              url_value = json_data["url"]
-              # Extract the part after '__hdnea__='
-              if "__hdnea__=" not in url_value:
-                  raise ValueError("No '__hdnea__' cookie found in URL field.")
-              
-              new_cookie = url_value.split("__hdnea__=")[1].strip()
-              print(f"Fetched cookie: {new_cookie[:50]}...")  # Log first 50 chars for security
+              # Try to parse as JSON first
+              new_cookie = None
+              try:
+                  json_data = response.json()
+                  print(f"Parsed JSON: {json.dumps(json_data, indent=2)}")  # Log full JSON
+                  if "url" in json_data:
+                      url_value = json_data["url"]
+                      if "__hdnea__=" in url_value:
+                          new_cookie = url_value.split("__hdnea__=")[1].strip()
+                          print(f"Extracted cookie from JSON 'url': {new_cookie[:50]}...")
+                      else:
+                          print("Error: No '__hdnea__' found in JSON 'url' field.")
+                  else:
+                      print("Error: No 'url' field found in JSON response.")
+              except json.JSONDecodeError:
+                  print("Response is not JSON. Trying as direct cookie string...")
+                  if raw_response.startswith("__hdnea__="):
+                      new_cookie = raw_response
+                      print(f"Extracted direct cookie: {new_cookie[:50]}...")
+                  else:
+                      raise ValueError("Response is neither valid JSON nor a direct __hdnea__ string.")
+
+              if not new_cookie:
+                  raise ValueError("Failed to extract __hdnea__ cookie from response.")
 
               # Check if JSON file exists
               if not os.path.exists(json_file_path):
@@ -89,10 +103,10 @@ jobs:
               print("Cookies updated successfully!")
 
           except requests.exceptions.RequestException as e:
-              print(f"Error fetching JSON: {e}")
+              print(f"Error fetching data: {e}")
               exit(1)
-          except json.JSONDecodeError:
-              print("Error: Invalid JSON from URL or jiotv.json.")
+          except json.JSONDecodeError as e:
+              print(f"Error parsing jiotv.json: {e}")
               exit(1)
           except ValueError as e:
               print(f"Error: {e}")
