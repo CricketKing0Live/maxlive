@@ -2,21 +2,21 @@ name: Update JioTV Cookies
 
 on:
   schedule:
-    # Har 6 ghante mein chalao (CRON format: minute hour day month day-of-week)
+    # Run every 6 hours (CRON format: minute hour day month day-of-week)
     - cron: '0 */6 * * *'
-  workflow_dispatch:  # Manual trigger ke liye
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   update-cookies:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # File update ke liye
+      contents: write  # Permission to write to repository
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}  # Push ke liye
+        token: ${{ secrets.GITHUB_TOKEN }}  # Token for pushing changes
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -25,51 +25,58 @@ jobs:
 
     - name: Extract __hdnea__ cookie and update jiotv.json
       run: |
-        # Inline Python script to extract __hdnea__ cookie
         python3 -c "
-import requests
-import json
+        import requests
+        import json
+        import sys
 
-# Hard-coded Main URL
-url = 'https://jo-json.vodep39240327.workers.dev/'
+        # Hard-coded Main URL
+        url = 'https://jo-json.vodep39240327.workers.dev/'
 
-# Try GET request to get cookies
-try:
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()  # Raise error for bad status codes
-except requests.RequestException as e:
-    print(f'Error fetching URL: {e}')
-    exit(1)
+        # Try GET request to get cookies
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()  # Raise error for bad status codes
+        except requests.RequestException as e:
+            print(f'Error fetching URL: {e}')
+            sys.exit(1)
 
-# Extract __hdnea__ cookie
-hdnea_cookie = None
-for cookie in response.cookies:
-    if cookie.name == '__hdnea__':
-        hdnea_cookie = f'__hdnea__={cookie.value}'
-        break
+        # Extract __hdnea__ cookie
+        hdnea_cookie = None
+        for cookie in response.cookies:
+            if cookie.name == '__hdnea__':
+                hdnea_cookie = f'__hdnea__={cookie.value}'
+                break
 
-# Load existing jiotv.json if it exists
-try:
-    with open('jiotv.json', 'r') as f:
-        data = json.load(f)
-except FileNotFoundError:
-    data = []  # Empty list if file doesn't exist
+        # Load existing jiotv.json if it exists
+        try:
+            with open('jiotv.json', 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            data = []  # Initialize empty list if file doesn't exist
+        except json.JSONDecodeError as e:
+            print(f'Error decoding jiotv.json: {e}')
+            sys.exit(1)
 
-# Update cookie field for all channels
-if hdnea_cookie:
-    if data:  # Check if data is not empty
-        for channel in data:
-            channel['cookie'] = hdnea_cookie
-    print(f'Updated cookies with: {hdnea_cookie}')
-else:
-    print('Warning: __hdnea__ cookie not found')
+        # Update cookie field for all channels
+        if hdnea_cookie and data:  # Check if cookie and data exist
+            for channel in data:
+                channel['cookie'] = hdnea_cookie
+            print(f'Updated cookies with: {hdnea_cookie}')
+        else:
+            print('Warning: __hdnea__ cookie not found or jiotv.json is empty')
 
-# Write to jiotv.json
-with open('jiotv.json', 'w') as f:
-    json.dump(data, f, indent=4)
+        # Write to jiotv.json
+        try:
+            with open('jiotv.json', 'w') as f:
+                json.dump(data, f, indent=4)
+            print('jiotv.json updated successfully')
+        except Exception as e:
+            print(f'Error writing to jiotv.json: {e}')
+            sys.exit(1)
 
-print('jiotv.json updated with cookie:')
-print(json.dumps(data, indent=2))
+        print('jiotv.json content:')
+        print(json.dumps(data, indent=2))
         "
 
     - name: Commit and push updated jiotv.json
