@@ -1,0 +1,96 @@
+name: Update JioTV Playlist Cookies
+
+on:
+  schedule:
+    - cron: '0 */12 * * *' # Runs every 12 hours
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  update-cookies:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Update cookies in Jiotv.json
+        run: |
+          python -c '
+          import json
+          import requests
+
+          # Configuration
+          API_URL = "https://jo-json.vodep39240327.workers.dev"
+          PLAYLIST_FILE = "Jiotv.json"
+
+          def fetch_new_cookies():
+              try:
+                  response = requests.get(API_URL)
+                  response.raise_for_status()
+                  return response.json()
+              except requests.RequestException as e:
+                  print(f"Error fetching data from {API_URL}: {e}")
+                  return None
+
+          def update_playlist_cookies():
+              # Read the existing playlist
+              try:
+                  with open(PLAYLIST_FILE, "r") as file:
+                      playlist = json.load(file)
+              except Exception as e:
+                  print(f"Error reading {PLAYLIST_FILE}: {e}")
+                  return
+
+              # Fetch new data from API
+              new_data = fetch_new_cookies()
+              if not new_data:
+                  return
+
+              # Create a dictionary for quick lookup by name
+              new_data_dict = {item["name"]: item for item in new_data}
+
+              # Update cookies in the playlist
+              updated = False
+              for channel in playlist:
+                  channel_name = channel.get("name")
+                  if channel_name in new_data_dict:
+                      new_cookie = new_data_dict[channel_name].get("cookie")
+                      if new_cookie and new_cookie != channel.get("cookie"):
+                          channel["cookie"] = new_cookie
+                          updated = True
+                          print(f"Updated cookie for {channel_name}")
+
+              # Save updated playlist if changes were made
+              if updated:
+                  try:
+                      with open(PLAYLIST_FILE, "w") as file:
+                          json.dump(playlist, file, indent=2)
+                      print(f"Successfully updated {PLAYLIST_FILE}")
+                  except Exception as e:
+                      print(f"Error writing to {PLAYLIST_FILE}: {e}")
+              else:
+                  print("No cookie updates required")
+
+          if __name__ == "__main__":
+              update_playlist_cookies()
+          '
+
+      - name: Commit changes
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add Jiotv.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update cookies in Jiotv.json"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
