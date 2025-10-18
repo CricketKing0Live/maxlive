@@ -45,6 +45,14 @@ jobs:
             print(f'Error fetching URL: {e}')
             sys.exit(1)
 
+        # Log all cookies for debugging
+        print('Cookies received from URL:')
+        if response.cookies:
+            for cookie in response.cookies:
+                print(f'  {cookie.name}: {cookie.value}')
+        else:
+            print('  No cookies received')
+
         # Extract __hdnea__ cookie
         hdnea_cookie = None
         for cookie in response.cookies:
@@ -52,35 +60,61 @@ jobs:
                 hdnea_cookie = f'__hdnea__={cookie.value}'
                 break
 
+        if not hdnea_cookie:
+            print('Error: __hdnea__ cookie not found in response')
+            sys.exit(1)
+
+        print(f'Found __hdnea__ cookie: {hdnea_cookie}')
+
         # Load existing Jiotv.json if it exists
         try:
             with open('Jiotv.json', 'r') as f:
                 data = json.load(f)
+            print('Jiotv.json loaded successfully. Content before update:')
+            print(json.dumps(data, indent=2))
         except FileNotFoundError:
-            data = []  # Initialize empty list if file doesn't exist
+            print('Error: Jiotv.json not found. Please ensure the file exists.')
+            sys.exit(1)
         except json.JSONDecodeError as e:
             print(f'Error decoding Jiotv.json: {e}')
             sys.exit(1)
 
+        # Validate Jiotv.json structure
+        if not isinstance(data, list):
+            print(f'Error: Jiotv.json is not a list, found type {type(data)}. Expected list of channel objects.')
+            sys.exit(1)
+
+        if not data:
+            print('Warning: Jiotv.json is an empty list. No channels to update.')
+            sys.exit(1)
+
         # Update cookie field for all channels
-        if hdnea_cookie and data:  # Check if cookie and data exist
-            for channel in data:
+        updated = False
+        for channel in data:
+            if not isinstance(channel, dict):
+                print(f'Warning: Invalid channel entry (not a dict): {channel}')
+                continue
+            old_cookie = channel.get('cookie', 'None')
+            if old_cookie != hdnea_cookie:
                 channel['cookie'] = hdnea_cookie
-            print(f'Updated cookies with: {hdnea_cookie}')
-        else:
-            print('Warning: __hdnea__ cookie not found or Jiotv.json is empty')
+                updated = True
+                print(f'Updated channel {channel.get('name', 'unknown')}: cookie changed from {old_cookie} to {hdnea_cookie}')
+            else:
+                print(f'No update needed for channel {channel.get('name', 'unknown')}: cookie is already {hdnea_cookie}')
+
+        if not updated:
+            print('No changes made to Jiotv.json: all cookies are already up-to-date.')
+            sys.exit(0)
 
         # Write to Jiotv.json
         try:
             with open('Jiotv.json', 'w') as f:
                 json.dump(data, f, indent=4)
-            print('Jiotv.json updated successfully')
+            print('Jiotv.json updated successfully. Content after update:')
+            print(json.dumps(data, indent=2))
         except Exception as e:
             print(f'Error writing to Jiotv.json: {e}')
             sys.exit(1)
-
-        print('Jiotv.json content:')
-        print(json.dumps(data, indent=2))
         "
 
     - name: Commit and push updated Jiotv.json
