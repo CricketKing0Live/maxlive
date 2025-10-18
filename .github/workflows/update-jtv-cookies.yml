@@ -2,7 +2,7 @@ name: Update JioTV Playlist Cookies
 
 on:
   schedule:
-    - cron: '0 */12 * * *' # Runs every 12 hours
+    - cron: '0 */6 * * *' # Runs every 6 hours
   workflow_dispatch: # Allows manual trigger
 
 jobs:
@@ -39,7 +39,10 @@ jobs:
               try:
                   parsed = urlparse(url)
                   query = parse_qs(parsed.query)
-                  return query.get("__hdnea__", [None])[0]
+                  cookie = query.get("__hdnea__", [None])[0]
+                  if cookie:
+                      return f"__hdnea__={cookie}"
+                  return None
               except:
                   return None
 
@@ -114,7 +117,7 @@ jobs:
           git config --global user.email 'action@github.com'
           git add Jiotv.json
           if git diff --quiet || ! git diff --staged --quiet; then
-            git commit -m "Update single cookie for all channels in Jiotv.json from API"
+            git commit -m "Update single __hdnea__ cookie for all channels in Jiotv.json from API"
             git push
           else
             echo "No changes to commit"
