@@ -21,18 +21,16 @@ jobs:
             echo "ERROR: JSON file is empty."
             exit 1
           fi
-          echo "Checking for url field..."
-          if ! jq -e '.url' stream.json >/dev/null 2>&1; then
-            echo "ERROR: url field not found in JSON."
+          echo "Checking for cookie field..."
+          if ! jq -e '.cookie' stream.json >/dev/null 2>&1; then
+            echo "ERROR: cookie field not found in JSON."
             cat stream.json
             exit 1
           fi
-          URL=$(jq -r '.url' stream.json)
-          echo "Extracted URL: $URL"
-          NEW_COOKIE=$(echo "$URL" | grep -oE '__hdnea__=[^& ]+' | cut -d'=' -f2- || echo "null")
-          if [ "$NEW_COOKIE" = "null" ]; then
-            echo "ERROR: No __hdnea__ cookie found in URL."
-            echo "URL: $URL"
+          NEW_COOKIE=$(jq -r '.cookie | sub("^__hdnea__="; "")' stream.json)
+          if [ -z "$NEW_COOKIE" ]; then
+            echo "ERROR: No valid __hdnea__ cookie found."
+            cat stream.json
             exit 1
           fi
           echo "Cookie extracted: $NEW_COOKIE"
@@ -56,7 +54,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add Jiotv.json
-          # Force commit to ensure update every run
           git commit -m "Update JioTV cookie ($(date -u '+%Y-%m-%d %H:%M:%S UTC') - ${{ github.sha }})" --no-verify --allow-empty
           git push || {
             echo "ERROR: Git push failed. Check GITHUB_TOKEN or permissions."
