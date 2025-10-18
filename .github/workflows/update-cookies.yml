@@ -33,21 +33,16 @@ import json
 # Hard-coded Main URL
 url = 'https://jo-json.vodep39240327.workers.dev/'
 
-# Default JSON structure for jiotv.json
-default_data = {
-    'logo': 'https://img.media.jio.com/tvpimages/66/40/302084_1753189751700_l_high.jpg',
-    'name': 'Star Plus',
-    'link': 'http://jiotvbpkmob.cdn.jio.com/bpk-tv/Star_Plus_BTS/output/index.mpd',
-    'drmScheme': 'clearkey',
-    'drmLicense': '3bba2ffaf08b501796c5d9eb431460a4:7a62074c4c46f3b153259526481c02bf',
-    'cookie': ''
-}
-
-# HEAD request to get cookies
-response = requests.head(url)
-hdnea_cookie = None
+# Try GET request to get cookies
+try:
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()  # Raise error for bad status codes
+except requests.RequestException as e:
+    print(f'Error fetching URL: {e}')
+    exit(1)
 
 # Extract __hdnea__ cookie
+hdnea_cookie = None
 for cookie in response.cookies:
     if cookie.name == '__hdnea__':
         hdnea_cookie = f'__hdnea__={cookie.value}'
@@ -58,11 +53,14 @@ try:
     with open('jiotv.json', 'r') as f:
         data = json.load(f)
 except FileNotFoundError:
-    data = default_data
+    data = []  # Empty list if file doesn't exist
 
-# Update cookie field if __hdnea__ was found
+# Update cookie field for all channels
 if hdnea_cookie:
-    data['cookie'] = hdnea_cookie
+    if data:  # Check if data is not empty
+        for channel in data:
+            channel['cookie'] = hdnea_cookie
+    print(f'Updated cookies with: {hdnea_cookie}')
 else:
     print('Warning: __hdnea__ cookie not found')
 
