@@ -2,8 +2,8 @@ name: Update JioTV Cookies
 
 on:
   schedule:
-    # Run every 12 hours (UTC). Change to '0 */6 * * *' for every 6 hours if needed.
-    - cron: '0 */12 * * *'
+    # Run every 6 hours (UTC)
+    - cron: '0 */6 * * *'
   workflow_dispatch:  # Allows manual trigger from GitHub Actions UI
 
 permissions:
@@ -45,26 +45,26 @@ jobs:
 
           try:
               # Fetch data from URL
-              print("Fetching data from URL...")
+              print("Fetching data from URL: " + url)
               response = requests.get(url, timeout=10)
               response.raise_for_status()
               raw_response = response.text.strip()
               print(f"Raw response: {raw_response[:200]}...")  # Log first 200 chars for debugging
 
-              # Try to parse as JSON first
+              # Try to parse as JSON and extract cookie from 'url' field
               new_cookie = None
               try:
                   json_data = response.json()
-                  print(f"Parsed JSON: {json.dumps(json_data, indent=2)}")  # Log full JSON
+                  print(f"Parsed JSON: {json.dumps(json_data, indent=2)}")  # Log full JSON for debugging
                   if "url" in json_data:
                       url_value = json_data["url"]
                       if "__hdnea__=" in url_value:
                           new_cookie = url_value.split("__hdnea__=")[1].strip()
                           print(f"Extracted cookie from JSON 'url': {new_cookie[:50]}...")
                       else:
-                          print("Error: No '__hdnea__' found in JSON 'url' field.")
+                          raise ValueError("No '__hdnea__' found in JSON 'url' field.")
                   else:
-                      print("Error: No 'url' field found in JSON response.")
+                      raise ValueError("No 'url' field found in JSON response.")
               except json.JSONDecodeError:
                   print("Response is not JSON. Trying as direct cookie string...")
                   if raw_response.startswith("__hdnea__="):
@@ -92,7 +92,7 @@ jobs:
                           channel['cookie'] = new_cookie
                           updated_count += 1
               else:
-                  print("Warning: JSON data is not a list. Skipping update.")
+                  raise ValueError("jiotv.json is not a valid list of channels.")
 
               print(f"Updated {updated_count} channels.")
 
@@ -100,10 +100,10 @@ jobs:
               with open(json_file_path, 'w', encoding='utf-8') as file:
                   json.dump(data, file, indent=2, ensure_ascii=False)
 
-              print("Cookies updated successfully!")
+              print("Cookies updated successfully in jiotv.json!")
 
           except requests.exceptions.RequestException as e:
-              print(f"Error fetching data: {e}")
+              print(f"Error fetching data from URL: {e}")
               exit(1)
           except json.JSONDecodeError as e:
               print(f"Error parsing jiotv.json: {e}")
