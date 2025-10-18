@@ -1,7 +1,7 @@
-name: Auto Update JioTV Cookies (Fixed Path and Force Update Every 6 Hours)
+name: Auto Update JioTV Cookies
 on:
   schedule:
-    - cron: '0 */6 * * *' # Har 6 ghante (12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM IST)
+    - cron: '0 */6 * * *' # Every 6 hours (12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM IST)
   workflow_dispatch: # Manual trigger
 jobs:
   update-cookies:
@@ -10,98 +10,58 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch and Debug new URL
+      - name: Fetch JSON and Extract Cookie
         run: |
-          echo "=== Fetching from https://jo-json.vodep39240327.workers.dev/ ==="
-          curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json
-          if [ $? -ne 0 ]; then
-            echo "✗ ERROR: Failed to fetch stream.json. Check URL or network."
+          echo "Fetching JSON from https://jo-json.vodep39240327.workers.dev/"
+          curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
+            echo "ERROR: Failed to fetch JSON. Check URL or network."
             exit 1
-          fi
+          }
           if [ ! -s stream.json ]; then
-            echo "✗ ERROR: stream.json is empty."
+            echo "ERROR: JSON file is empty."
             exit 1
           fi
-          echo "File size: $(wc -c < stream.json) bytes"
-          echo "Full stream.json content (first 500 chars):"
-          head -c 500 stream.json | tr -d '\n' | fold -w 80
           echo "Checking for url field..."
-          if jq -e '.url' stream.json >/dev/null 2>&1; then
-            echo "✓ url field found in file!"
-          else
-            echo "✗ ERROR: url field NOT found. Dumping first 100 lines:"
-            head -n 100 stream.json
-            exit 1
-          fi
-      - name: Extract Cookie and Update Jiotv.json
-        run: |
-          echo "=== Extracting Cookie ==="
-          # Extract the URL from the JSON
-          URL=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
-          if [ "$URL" = "null" ]; then
-            echo "✗ ERROR: No valid URL found in .url. Update skipped."
-            echo "Raw stream.json content (first 100 lines):"
-            head -n 100 stream.json
+          if ! jq -e '.url' stream.json >/dev/null 2>&1; then
+            echo "ERROR: url field not found in JSON."
+            cat stream.json
             exit 0
           fi
+          URL=$(jq -r '.url' stream.json)
           echo "Extracted URL: $URL"
-          # Extract the __hdnea__ parameter from the URL
           NEW_COOKIE=$(echo "$URL" | grep -oE '__hdnea__=[^& ]+' | cut -d'=' -f2- || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
-            echo "✗ ERROR: No valid __hdnea__ cookie found in URL. Update skipped."
-            echo "Raw URL: $URL"
+            echo "ERROR: No __hdnea__ cookie found in URL. Skipping update."
+            echo "URL: $URL"
             exit 0
           fi
-          echo "✓ Cookie extracted: $NEW_COOKIE"
-
-          echo "=== Updating Jiotv.json ==="
-          # Create backup or initialize Jiotv.json if missing
-          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"cookie": ""}]' > Jiotv_backup.json
-          # Validate Jiotv.json
-          if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing with basic structure."
-            echo '[{"cookie": ""}]' > Jiotv_backup.json
+          echo "Cookie extracted: $NEW_COOKIE"
+          # Initialize Jiotv.json if missing or invalid
+          if [ ! -f Jiotv.json ] || ! jq -e . Jiotv.json >/dev/null 2>&1; then
+            echo '[{"cookie": ""}]' > Jiotv.json
+            echo "Initialized Jiotv.json with default structure."
           fi
-          # Update the cookie field
-          jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie)' Jiotv_backup.json > Jiotv_updated.json
-          if [ $? -ne 0 ]; then
-            echo "✗ ERROR: Failed to update Jiotv.json with jq. Dumping Jiotv_backup.json:"
-            cat Jiotv_backup.json
+          # Update cookie in Jiotv.json
+          jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie)' Jiotv.json > Jiotv_temp.json || {
+            echo "ERROR: Failed to update Jiotv.json."
+            cat Jiotv.json
             exit 1
-          fi
-          mv Jiotv_updated.json Jiotv.json
-
-          echo "✓ Update complete. New cookie: $NEW_COOKIE"
-          echo "Preview of updated Jiotv.json (first entry's cookie):"
-          jq '.[0].cookie' Jiotv.json 2>/dev/null || echo "No valid JSON to preview"
-          echo "Full updated Jiotv.json preview (first 200 chars):"
-          head -c 200 Jiotv.json
-
-          if ! diff -q Jiotv_backup.json Jiotv.json >/dev/null 2>&1; then
-            echo "✓ File changed!"
-          else
-            echo "✗ No change detected (possible same cookie)."
-          fi
-      - name: Force Commit Changes
+          }
+          mv Jiotv_temp.json Jiotv.json
+          echo "Updated Jiotv.json with new cookie."
+          echo "Preview of Jiotv.json (first entry's cookie):"
+          jq '.[0].cookie' Jiotv.json
+      - name: Commit Changes
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git add Jiotv.json
-          # Force commit with a timestamp file
-          touch .force-update-timestamp
-          git add .force-update-timestamp
-          git commit -m "Auto-update cookies in Jiotv.json (new: ${{ github.sha }}) --no-verify" || {
-            echo "✗ ERROR: Commit failed. Creating fallback commit."
-            echo '{"update": "forced"}' > .force-commit.json
-            git add .force-commit.json
-            git commit -m "Fallback force update (new: ${{ github.sha }}) --no-verify" || {
-              echo "✗ ERROR: Fallback commit failed. Dumping git status:"
-              git status
-              exit 1
-            }
+          git commit -m "Update JioTV cookie (${{ github.sha }})" --no-verify || {
+            echo "No changes to commit."
+            exit 0
           }
           git push || {
-            echo "✗ ERROR: Git push failed. Check GITHUB_TOKEN or repo permissions."
+            echo "ERROR: Git push failed. Check GITHUB_TOKEN or permissions."
             git status
             exit 1
           }
