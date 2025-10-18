@@ -27,7 +27,7 @@ jobs:
       run: |
         pip install requests
 
-    - name: Extract __hdnea__ cookie and update jiotv.json
+    - name: Extract __hdnea__ cookie and update Jiotv.json
       run: |
         python3 -c "
         import requests
@@ -52,14 +52,14 @@ jobs:
                 hdnea_cookie = f'__hdnea__={cookie.value}'
                 break
 
-        # Load existing jiotv.json if it exists
+        # Load existing Jiotv.json if it exists
         try:
-            with open('jiotv.json', 'r') as f:
+            with open('Jiotv.json', 'r') as f:
                 data = json.load(f)
         except FileNotFoundError:
             data = []  # Initialize empty list if file doesn't exist
         except json.JSONDecodeError as e:
-            print(f'Error decoding jiotv.json: {e}')
+            print(f'Error decoding Jiotv.json: {e}')
             sys.exit(1)
 
         # Update cookie field for all channels
@@ -68,30 +68,30 @@ jobs:
                 channel['cookie'] = hdnea_cookie
             print(f'Updated cookies with: {hdnea_cookie}')
         else:
-            print('Warning: __hdnea__ cookie not found or jiotv.json is empty')
+            print('Warning: __hdnea__ cookie not found or Jiotv.json is empty')
 
-        # Write to jiotv.json
+        # Write to Jiotv.json
         try:
-            with open('jiotv.json', 'w') as f:
+            with open('Jiotv.json', 'w') as f:
                 json.dump(data, f, indent=4)
-            print('jiotv.json updated successfully')
+            print('Jiotv.json updated successfully')
         except Exception as e:
-            print(f'Error writing to jiotv.json: {e}')
+            print(f'Error writing to Jiotv.json: {e}')
             sys.exit(1)
 
-        print('jiotv.json content:')
+        print('Jiotv.json content:')
         print(json.dumps(data, indent=2))
         "
 
-    - name: Commit and push updated jiotv.json
+    - name: Commit and push updated Jiotv.json
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add jiotv.json
+        git add Jiotv.json
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else
-          git commit -m 'Update __hdnea__ cookie in jiotv.json [skip ci]'
+          git commit -m 'Update __hdnea__ cookie in Jiotv.json [skip ci]'
           git push
         fi
       env:
