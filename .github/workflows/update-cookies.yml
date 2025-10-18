@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch JSON and Extract Cookie
+      - name: Fetch JSON and Update Jiotv.json
         run: |
           echo "Fetching JSON from https://jo-json.vodep39240327.workers.dev/"
           curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
@@ -25,15 +25,15 @@ jobs:
           if ! jq -e '.url' stream.json >/dev/null 2>&1; then
             echo "ERROR: url field not found in JSON."
             cat stream.json
-            exit 0
+            exit 1
           fi
           URL=$(jq -r '.url' stream.json)
           echo "Extracted URL: $URL"
           NEW_COOKIE=$(echo "$URL" | grep -oE '__hdnea__=[^& ]+' | cut -d'=' -f2- || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
-            echo "ERROR: No __hdnea__ cookie found in URL. Skipping update."
+            echo "ERROR: No __hdnea__ cookie found in URL."
             echo "URL: $URL"
-            exit 0
+            exit 1
           fi
           echo "Cookie extracted: $NEW_COOKIE"
           # Initialize Jiotv.json if missing or invalid
@@ -48,18 +48,16 @@ jobs:
             exit 1
           }
           mv Jiotv_temp.json Jiotv.json
-          echo "Updated Jiotv.json with new cookie."
+          echo "Updated Jiotv.json with new cookie: $NEW_COOKIE"
           echo "Preview of Jiotv.json (first entry's cookie):"
-          jq '.[0].cookie' Jiotv.json
-      - name: Commit Changes
+          jq '.[0].cookie' Jiotv.json || echo "No valid JSON to preview"
+      - name: Commit and Push Changes
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add Jiotv.json
-          git commit -m "Update JioTV cookie (${{ github.sha }})" --no-verify || {
-            echo "No changes to commit."
-            exit 0
-          }
+          # Force commit to ensure update every run
+          git commit -m "Update JioTV cookie ($(date -u '+%Y-%m-%d %H:%M:%S UTC') - ${{ github.sha }})" --no-verify --allow-empty
           git push || {
             echo "ERROR: Git push failed. Check GITHUB_TOKEN or permissions."
             git status
