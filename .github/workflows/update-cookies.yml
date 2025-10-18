@@ -60,7 +60,7 @@ jobs:
             data = []  # Initialize empty list if file doesn't exist
         except json.JSONDecodeError as e:
             print(f'Error decoding jiotv.json: {e}')
-            sys.exit(1ස
+            sys.exit(1)
 
         # Update cookie field for all channels
         if hdnea_cookie and data:  # Check if cookie and data exist
