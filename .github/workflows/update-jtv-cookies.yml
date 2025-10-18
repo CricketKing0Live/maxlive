@@ -21,25 +21,74 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests urllib.parse
 
       - name: Update cookies in Jiotv.json
         run: |
           python -c '
           import json
           import requests
+          from urllib.parse import urlparse, parse_qs
 
           # Configuration
           API_URL = "https://jo-json.vodep39240327.workers.dev"
           PLAYLIST_FILE = "Jiotv.json"
 
+          # Channel name mapping: Map readable name to channel ID (expand as needed)
+          # Example: "Star Plus HD" -> 143 (adjust IDs based on your playlist links)
+          NAME_TO_ID = {
+              "Star Plus HD": 143,
+              "Colors HD": 144,
+              "History HD": 146,
+              "Star Sports 3": 147,
+              "Star Sports 1 Hindi": 148,
+              "Star Gold HD": 156,
+              # Add more mappings here, e.g., "CNBC Tv18 Prime HD": 143
+              # You can derive IDs from the "link" URL path if it contains the ID
+          }
+
+          def extract_hdnea_from_url(url):
+              """Extract __hdnea__ cookie from MPD URL."""
+              try:
+                  parsed = urlparse(url)
+                  query = parse_qs(parsed.query)
+                  return query.get("__hdnea__", [None])[0]
+              except:
+                  return None
+
           def fetch_new_cookies():
               try:
                   response = requests.get(API_URL)
                   response.raise_for_status()
-                  return response.json()
+                  data = response.json()
+                  print(f"Fetched API data for {len(data)} channels")
+                  # Extract cookies by channel ID
+                  cookies_by_id = {}
+                  for channel_id, info in data.items():
+                      if isinstance(info, dict) and "url" in info:
+                          cookie = extract_hdnea_from_url(info["url"])
+                          if cookie:
+                              cookies_by_id[channel_id] = cookie
+                  print(f"Extracted cookies for {len(cookies_by_id)} channels")
+                  return cookies_by_id
               except requests.RequestException as e:
                   print(f"Error fetching data from {API_URL}: {e}")
+                  return {}
+              except ValueError as e:
+                  print(f"Error parsing JSON from {API_URL}: {e}")
+                  return {}
+
+          def get_channel_id_from_link(link):
+              """Extract channel ID from link if possible (fallback to mapping)."""
+              try:
+                  parsed = urlparse(link)
+                  path_segments = parsed.path.split("/")
+                  # Assume ID is in URL like /bpk-tv/Channel_Name_BTS/ or similar; adjust if needed
+                  for seg in path_segments:
+                      if seg.isdigit():
+                          return int(seg)
+                  return None
+              except:
                   return None
 
           def update_playlist_cookies():
@@ -51,24 +100,26 @@ jobs:
                   print(f"Error reading {PLAYLIST_FILE}: {e}")
                   return
 
-              # Fetch new data from API
-              new_data = fetch_new_cookies()
-              if not new_data:
+              # Fetch new cookies from API
+              new_cookies = fetch_new_cookies()
+              if not new_cookies:
+                  print("No valid data from API, exiting.")
                   return
-
-              # Create a dictionary for quick lookup by name
-              new_data_dict = {item["name"]: item for item in new_data}
 
               # Update cookies in the playlist
               updated = False
               for channel in playlist:
                   channel_name = channel.get("name")
-                  if channel_name in new_data_dict:
-                      new_cookie = new_data_dict[channel_name].get("cookie")
-                      if new_cookie and new_cookie != channel.get("cookie"):
+                  if not channel_name:
+                      continue
+                  channel_id = NAME_TO_ID.get(channel_name) or get_channel_id_from_link(channel.get("link", ""))
+                  if channel_id and str(channel_id) in new_cookies:
+                      new_cookie = new_cookies[str(channel_id)]
+                      old_cookie = channel.get("cookie")
+                      if new_cookie and new_cookie != old_cookie:
                           channel["cookie"] = new_cookie
                           updated = True
-                          print(f"Updated cookie for {channel_name}")
+                          print(f"Updated cookie for {channel_name} (ID: {channel_id})")
 
               # Save updated playlist if changes were made
               if updated:
@@ -90,7 +141,11 @@ jobs:
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
           git add Jiotv.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update cookies in Jiotv.json"
-          git push
+          if git diff --quiet || ! git diff --staged --quiet; then
+            git commit -m "Update cookies in Jiotv.json from API"
+            git push
+          else
+            echo "No changes to commit"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
