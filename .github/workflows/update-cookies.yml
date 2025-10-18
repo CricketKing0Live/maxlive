@@ -14,7 +14,7 @@ jobs:
         run: |
           echo "Fetching JSON from https://jo-json.vodep39240327.workers.dev/"
           curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
-            echo "ERROR: Failed to fetch JSON. Check URL or network."
+            echo "ERROR: Failed to fetch JSON. HTTP status: $?"
             exit 1
           }
           if [ ! -s stream.json ]; then
@@ -23,13 +23,13 @@ jobs:
           fi
           echo "Checking for cookie field..."
           if ! jq -e '.cookie' stream.json >/dev/null 2>&1; then
-            echo "ERROR: cookie field not found in JSON."
+            echo "ERROR: cookie field not found."
             cat stream.json
             exit 1
           fi
           NEW_COOKIE=$(jq -r '.cookie | sub("^__hdnea__="; "")' stream.json)
           if [ -z "$NEW_COOKIE" ]; then
-            echo "ERROR: No valid __hdnea__ cookie found."
+            echo "ERROR: Cookie is empty or invalid."
             cat stream.json
             exit 1
           fi
@@ -37,26 +37,28 @@ jobs:
           # Initialize Jiotv.json if missing or invalid
           if [ ! -f Jiotv.json ] || ! jq -e . Jiotv.json >/dev/null 2>&1; then
             echo '[{"cookie": ""}]' > Jiotv.json
-            echo "Initialized Jiotv.json with default structure."
+            echo "Initialized Jiotv.json."
           fi
-          # Update cookie in Jiotv.json
+          # Update Jiotv.json
           jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie)' Jiotv.json > Jiotv_temp.json || {
             echo "ERROR: Failed to update Jiotv.json."
             cat Jiotv.json
             exit 1
           }
           mv Jiotv_temp.json Jiotv.json
-          echo "Updated Jiotv.json with new cookie: $NEW_COOKIE"
-          echo "Preview of Jiotv.json (first entry's cookie):"
-          jq '.[0].cookie' Jiotv.json || echo "No valid JSON to preview"
+          echo "Updated Jiotv.json with cookie: $NEW_COOKIE"
       - name: Commit and Push Changes
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add Jiotv.json
-          git commit -m "Update JioTV cookie ($(date -u '+%Y-%m-%d %H:%M:%S UTC') - ${{ github.sha }})" --no-verify --allow-empty
+          git commit -m "Update JioTV cookie ($(date -u '+%Y-%m-%d %H:%M:%S UTC') - ${{ github.sha }})" --no-verify --allow-empty || {
+            echo "ERROR: Commit failed."
+            git status
+            exit 1
+          }
           git push || {
-            echo "ERROR: Git push failed. Check GITHUB_TOKEN or permissions."
+            echo "ERROR: Git push failed. Check GITHUB_TOKEN."
             git status
             exit 1
           }
