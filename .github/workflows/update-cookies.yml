@@ -1,64 +1,107 @@
-name: Auto Update JioTV Cookies
+name: Update JioTV Cookies
+
 on:
   schedule:
-    - cron: '0 */6 * * *' # Every 6 hours (12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM IST)
-  workflow_dispatch: # Manual trigger
+    # Run every 12 hours (UTC). Change to '0 */6 * * *' for every 6 hours if needed.
+    - cron: '0 */12 * * *'
+  workflow_dispatch:  # Allows manual trigger from GitHub Actions UI
+
+permissions:
+  contents: write  # Required to commit and push changes
+
 jobs:
   update-cookies:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch and Update Cookie
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}  # Default token for commits
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'  # Latest stable Python version
+
+      - name: Install dependencies
         run: |
-          echo "Fetching JSON..."
-          curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
-            echo "ERROR: Failed to fetch JSON. Status: $?"
-            exit 1
-          }
-          if [ ! -s stream.json ]; then
-            echo "ERROR: JSON file is empty."
-            exit 1
-          fi
-          if ! jq -e '.url' stream.json >/dev/null 2>&1; then
-            echo "ERROR: url field not found."
-            cat stream.json
-            exit 1
-          fi
-          URL=$(jq -r '.url' stream.json)
-          NEW_COOKIE=$(echo "$URL" | grep -oE '__hdnea__=[^& ]+' | cut -d'=' -f2- || echo "")
-          if [ -z "$NEW_COOKIE" ]; then
-            echo "ERROR: No __hdnea__ cookie found in URL."
-            echo "URL: $URL"
-            exit 1
-          fi
-          echo "Cookie: $NEW_COOKIE"
-          if [ ! -f Jiotv.json ] || ! jq -e . Jiotv.json >/dev/null 2>&1; then
-            echo '[{"cookie": ""}]' > Jiotv.json
-            echo "Initialized Jiotv.json."
-          fi
-          jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie)' Jiotv.json > Jiotv_temp.json || {
-            echo "ERROR: Failed to update Jiotv.json."
-            cat Jiotv.json
-            exit 1
-          }
-          mv Jiotv_temp.json Jiotv.json
-          echo "Updated Jiotv.json with cookie: $NEW_COOKIE"
-      - name: Commit and Push
+          python -m pip install --upgrade pip
+          pip install requests  # For fetching cookie from URL
+
+      - name: Create and Run Update Script
         run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add Jiotv.json
-          git commit -m "Update JioTV cookie ($(date -u '+%Y-%m-%d %H:%M:%S UTC'))" --no-verify --allow-empty || {
-            echo "ERROR: Commit failed."
-            git status
-            exit 1
-          }
-          git push || {
-            echo "ERROR: Push failed. Check GITHUB_TOKEN."
-            git status
-            exit 1
-          }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Create update_cookies.py inline
+          cat << 'EOF' > update_cookies.py
+          import json
+          import requests
+          import os
+
+          # URL to fetch new cookie
+          url = "https://jo-json.vodep39240327.workers.dev/"
+
+          # JSON file path (repo root)
+          json_file_path = "jiotv.json"
+
+          try:
+              # Fetch cookie from URL
+              print("Fetching cookie from URL...")
+              response = requests.get(url, timeout=10)
+              response.raise_for_status()
+              new_cookie = response.text.strip()  # Extract cookie string
+              print(f"Fetched cookie: {new_cookie[:50]}...")  # Log first 50 chars for security
+
+              # Check if JSON file exists
+              if not os.path.exists(json_file_path):
+                  raise FileNotFoundError(f"{json_file_path} not found in repo root.")
+
+              # Read JSON file
+              with open(json_file_path, 'r', encoding='utf-8') as file:
+                  data = json.load(file)
+
+              # Update cookie in all channels
+              updated_count = 0
+              if isinstance(data, list):
+                  for channel in data:
+                      if 'cookie' in channel:
+                          channel['cookie'] = new_cookie
+                          updated_count += 1
+              else:
+                  print("Warning: JSON data is not a list. Skipping update.")
+
+              print(f"Updated {updated_count} channels.")
+
+              # Write back to file
+              with open(json_file_path, 'w', encoding='utf-8') as file:
+                  json.dump(data, file, indent=2, ensure_ascii=False)
+
+              print("Cookies updated successfully!")
+
+          except requests.exceptions.RequestException as e:
+              print(f"Error fetching cookie: {e}")
+              exit(1)
+          except FileNotFoundError as e:
+              print(f"Error: {e}")
+              exit(1)
+          except json.JSONDecodeError:
+              print("Error: Invalid JSON in jiotv.json.")
+              exit(1)
+          except Exception as e:
+              print(f"Unexpected error: {e}")
+              exit(1)
+          EOF
+
+          # Run the script
+          python update_cookies.py
+
+      - name: Commit and Push Changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add jiotv.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update JioTV cookies [$(date '+%Y-%m-%d %H:%M:%S UTC')]"
+            git push
+          fi
