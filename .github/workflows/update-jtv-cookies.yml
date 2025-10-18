@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests urllib.parse
+          pip install requests
 
       - name: Update cookies in Jiotv.json
         run: |
