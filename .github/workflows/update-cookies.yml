@@ -2,123 +2,89 @@ name: Update JioTV Cookies
 
 on:
   schedule:
-    # Run every 6 hours (UTC)
+    # Har 6 ghante mein chalao (CRON format: minute hour day month day-of-week)
     - cron: '0 */6 * * *'
-  workflow_dispatch:  # Allows manual trigger from GitHub Actions UI
-
-permissions:
-  contents: write  # Required to commit and push changes
+  workflow_dispatch:  # Manual trigger ke liye
 
 jobs:
   update-cookies:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write  # File update ke liye
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # Default token for commits
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}  # Push ke liye
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'  # Latest stable Python version
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests  # For fetching JSON from URL
+    - name: Extract __hdnea__ cookie and update jiotv.json
+      run: |
+        # Inline Python script to extract __hdnea__ cookie
+        python3 -c "
+import requests
+import json
+import os
 
-      - name: Create and Run Update Script
-        run: |
-          # Create update_cookies.py inline
-          cat << 'EOF' > update_cookies.py
-          import json
-          import requests
-          import os
+# Main URL
+url = 'https://jo-json.vodep39240327.workers.dev/'
 
-          # URL to fetch JSON
-          url = "https://jo-json.vodep39240327.workers.dev/"
+# Default JSON structure
+default_data = {
+    'logo': 'https://img.media.jio.com/tvpimages/66/40/302084_1753189751700_l_high.jpg',
+    'name': 'Star Plus',
+    'link': 'http://jiotvbpkmob.cdn.jio.com/bpk-tv/Star_Plus_BTS/output/index.mpd',
+    'drmScheme': 'clearkey',
+    'drmLicense': '3bba2ffaf08b501796c5d9eb431460a4:7a62074c4c46f3b153259526481c02bf',
+    'cookie': ''
+}
 
-          # JSON file path (repo root)
-          json_file_path = "jiotv.json"
+# HEAD request to get cookies
+response = requests.head(url)
+hdnea_cookie = None
 
-          try:
-              # Fetch JSON from URL
-              print("Fetching JSON from URL: " + url)
-              response = requests.get(url, timeout=10)
-              response.raise_for_status()
-              raw_response = response.text.strip()
-              print(f"Raw response: {raw_response[:200]}...")  # Log first 200 chars for debugging
+# Extract __hdnea__ cookie
+for cookie in response.cookies:
+    if cookie.name == '__hdnea__':
+        hdnea_cookie = f'__hdnea__={cookie.value}'
+        break
 
-              # Parse JSON and extract __hdnea__ from 'url' field
-              try:
-                  json_data = response.json()
-                  print(f"Parsed JSON: {json.dumps(json_data, indent=2)}")  # Log full JSON
-                  if "url" not in json_data:
-                      raise ValueError("No 'url' field found in JSON response.")
-                  url_value = json_data["url"]
-                  if "__hdnea__=" not in url_value:
-                      raise ValueError("No '__hdnea__' found in JSON 'url' field.")
-                  new_cookie = url_value.split("__hdnea__=")[1].strip()
-                  print(f"Extracted cookie: {new_cookie[:50]}...")  # Log first 50 chars
-              except json.JSONDecodeError:
-                  raise ValueError("Response is not valid JSON.")
+# Load existing jiotv.json if it exists
+try:
+    with open('jiotv.json', 'r') as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = default_data
 
-              # Check if JSON file exists
-              if not os.path.exists(json_file_path):
-                  raise FileNotFoundError(f"{json_file_path} not found in repo root.")
+# Update cookie field if __hdnea__ was found
+if hdnea_cookie:
+    data['cookie'] = hdnea_cookie
+else:
+    print('Warning: __hdnea__ cookie not found')
 
-              # Read JSON file
-              with open(json_file_path, 'r', encoding='utf-8') as file:
-                  data = json.load(file)
+# Write to jiotv.json
+with open('jiotv.json', 'w') as f:
+    json.dump(data, f, indent=4)
 
-              # Update cookie in all channels
-              updated_count = 0
-              if isinstance(data, list):
-                  for channel in data:
-                      if 'cookie' in channel:
-                          channel['cookie'] = new_cookie
-                          updated_count += 1
-              else:
-                  raise ValueError("jiotv.json is not a valid list of channels.")
+print('jiotv.json updated with cookie:')
+print(json.dumps(data, indent=2))
+        "
 
-              print(f"Updated {updated_count} channels.")
-
-              # Write back to file
-              with open(json_file_path, 'w', encoding='utf-8') as file:
-                  json.dump(data, file, indent=2, ensure_ascii=False)
-
-              print("Cookies updated successfully in jiotv.json!")
-
-          except requests.exceptions.RequestException as e:
-              print(f"Error fetching JSON from URL: {e}")
-              exit(1)
-          except json.JSONDecodeError as e:
-              print(f"Error parsing JSON: {e}")
-              exit(1)
-          except ValueError as e:
-              print(f"Error: {e}")
-              exit(1)
-          except FileNotFoundError as e:
-              print(f"Error: {e}")
-              exit(1)
-          except Exception as e:
-              print(f"Unexpected error: {e}")
-              exit(1)
-          EOF
-
-          # Run the script
-          python update_cookies.py
-
-      - name: Commit and Push Changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add jiotv.json
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Update JioTV cookies [$(date '+%Y-%m-%d %H:%M:%S UTC')]"
-            git push
-          fi
+    - name: Commit and push updated jiotv.json
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add jiotv.json
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m 'Update __hdnea__ cookie in jiotv.json [skip ci]'
+          git push
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
