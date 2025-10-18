@@ -35,15 +35,15 @@ jobs:
         import sys
         import re
 
-        # Hard-coded Main URL
+        # Main URL for fetching JSON
         url = 'https://jo-json.vodep39240327.workers.dev/'
 
-        # Fetch JSON from URL
+        # Fetch JSON
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
         except requests.RequestException as e:
-            print(f'Error fetching URL: {e}')
+            print(f'Error fetching URL {url}: {e}')
             sys.exit(1)
 
         # Parse JSON response
@@ -63,7 +63,7 @@ jobs:
         url_field = json_data['url']
         match = re.search(r'__hdnea__=(.*?)(?:$|&)', url_field)
         if not match:
-            print('Error: __hdnea__ not found in the url field')
+            print(f'Error: __hdnea__ not found in url field: {url_field}')
             sys.exit(1)
 
         hdnea_cookie = f'__hdnea__={match.group(1)}'
@@ -76,7 +76,7 @@ jobs:
             print('Jiotv.json loaded successfully. Content before update:')
             print(json.dumps(data, indent=2))
         except FileNotFoundError:
-            print('Error: Jiotv.json not found. Please ensure the file exists.')
+            print('Error: Jiotv.json not found in repository root.')
             sys.exit(1)
         except json.JSONDecodeError as e:
             print(f'Error decoding Jiotv.json: {e}')
@@ -93,8 +93,12 @@ jobs:
             if not isinstance(channel, dict):
                 print(f'Warning: Skipping invalid channel entry (not a dict): {channel}')
                 continue
-            old_cookie = channel.get('cookie', 'None')
-            if old_cookie != hdnea_cookie:
+            if 'cookie' not in channel:
+                print(f'Warning: Channel {channel.get('name', 'unknown')} has no cookie field, adding one')
+                channel['cookie'] = hdnea_cookie
+                updated = True
+            elif channel['cookie'] != hdnea_cookie:
+                old_cookie = channel['cookie']
                 channel['cookie'] = hdnea_cookie
                 updated = True
                 print(f'Updated channel {channel.get('name', 'unknown')}: cookie changed from {old_cookie} to {hdnea_cookie}')
