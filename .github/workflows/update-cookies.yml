@@ -23,6 +23,10 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install Python dependencies
+      run: |
+        pip install requests
+
     - name: Extract __hdnea__ cookie and update jiotv.json
       run: |
         python3 -c "
@@ -56,7 +60,7 @@ jobs:
             data = []  # Initialize empty list if file doesn't exist
         except json.JSONDecodeError as e:
             print(f'Error decoding jiotv.json: {e}')
-            sys.exit(1)
+            sys.exit(1ස
 
         # Update cookie field for all channels
         if hdnea_cookie and data:  # Check if cookie and data exist
