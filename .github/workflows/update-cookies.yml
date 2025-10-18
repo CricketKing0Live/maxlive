@@ -29,12 +29,11 @@ jobs:
         python3 -c "
 import requests
 import json
-import os
 
-# Main URL
+# Hard-coded Main URL
 url = 'https://jo-json.vodep39240327.workers.dev/'
 
-# Default JSON structure
+# Default JSON structure for jiotv.json
 default_data = {
     'logo': 'https://img.media.jio.com/tvpimages/66/40/302084_1753189751700_l_high.jpg',
     'name': 'Star Plus',
