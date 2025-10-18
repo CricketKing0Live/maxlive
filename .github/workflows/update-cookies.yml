@@ -87,7 +87,7 @@ jobs:
             print(f'Error: Jiotv.json is not a non-empty list, found type {type(data)} or empty.')
             sys.exit(1)
 
-        # Update cookie field for all channels
+        # Update only the cookie field for all channels
         updated = False
         for channel in data:
             if not isinstance(channel, dict):
