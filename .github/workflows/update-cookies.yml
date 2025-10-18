@@ -13,19 +13,23 @@ jobs:
       - name: Fetch and Debug new URL
         run: |
           echo "=== Fetching from https://jo-json.vodep39240327.workers.dev/ ==="
-          curl -s https://jo-json.vodep39240327.workers.dev/ > stream.json
+          curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json
+          if [ $? -ne 0 ]; then
+            echo "✗ ERROR: Failed to fetch stream.json. Check URL or network."
+            exit 1
+          fi
           if [ ! -s stream.json ]; then
-            echo "✗ ERROR: Failed to fetch stream.json. File is empty."
+            echo "✗ ERROR: stream.json is empty."
             exit 1
           fi
           echo "File size: $(wc -c < stream.json) bytes"
-          echo "Full stream.json preview (first 500 chars):"
+          echo "Full stream.json content (first 500 chars):"
           head -c 500 stream.json | tr -d '\n' | fold -w 80
-          echo "Searching for url field..."
+          echo "Checking for url field..."
           if jq -e '.url' stream.json >/dev/null 2>&1; then
             echo "✓ url field found in file!"
           else
-            echo "✗ url field NOT found. Dumping first 100 lines:"
+            echo "✗ ERROR: url field NOT found. Dumping first 100 lines:"
             head -n 100 stream.json
             exit 1
           fi
@@ -40,8 +44,9 @@ jobs:
             head -n 100 stream.json
             exit 0
           fi
+          echo "Extracted URL: $URL"
           # Extract the __hdnea__ parameter from the URL
-          NEW_COOKIE=$(echo "$URL" | grep -oE '__hdnea__=[^ ]+' | cut -d'=' -f2- || echo "null")
+          NEW_COOKIE=$(echo "$URL" | grep -oE '__hdnea__=[^& ]+' | cut -d'=' -f2- || echo "null")
           if [ "$NEW_COOKIE" = "null" ]; then
             echo "✗ ERROR: No valid __hdnea__ cookie found in URL. Update skipped."
             echo "Raw URL: $URL"
@@ -50,15 +55,20 @@ jobs:
           echo "✓ Cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Jiotv.json ==="
-          # Create backup
-          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[]' > Jiotv_backup.json
+          # Create backup or initialize Jiotv.json if missing
+          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"cookie": ""}]' > Jiotv_backup.json
           # Validate Jiotv.json
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Jiotv.json is invalid JSON. Creating a basic structure."
+            echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing with basic structure."
             echo '[{"cookie": ""}]' > Jiotv_backup.json
           fi
-          # Update the cookie field in each object
+          # Update the cookie field
           jq --arg new_cookie "$NEW_COOKIE" 'map(.cookie = $new_cookie)' Jiotv_backup.json > Jiotv_updated.json
+          if [ $? -ne 0 ]; then
+            echo "✗ ERROR: Failed to update Jiotv.json with jq. Dumping Jiotv_backup.json:"
+            cat Jiotv_backup.json
+            exit 1
+          fi
           mv Jiotv_updated.json Jiotv.json
 
           echo "✓ Update complete. New cookie: $NEW_COOKIE"
@@ -84,7 +94,11 @@ jobs:
             echo "✗ ERROR: Commit failed. Creating fallback commit."
             echo '{"update": "forced"}' > .force-commit.json
             git add .force-commit.json
-            git commit -m "Fallback force update (new: ${{ github.sha }}) --no-verify"
+            git commit -m "Fallback force update (new: ${{ github.sha }}) --no-verify" || {
+              echo "✗ ERROR: Fallback commit failed. Dumping git status:"
+              git status
+              exit 1
+            }
           }
           git push || {
             echo "✗ ERROR: Git push failed. Check GITHUB_TOKEN or repo permissions."
