@@ -2,7 +2,7 @@ name: Update Cookies in Ziotv.json
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # Runs every 4 hours (UTC)
+    - cron: '0 */4 * * *' # Runs every 4 hours (UTC, 5:30 AM, 9:30 AM, 1:30 PM, 5:30 PM IST)
   workflow_dispatch: # Allows manual triggering
 
 jobs:
@@ -55,27 +55,36 @@ jobs:
               cookies = {}
               lines = m3u_content.splitlines()
               print(f"Total lines in M3U file: {len(lines)}")
+              # Print first 10 lines for debugging (limit to avoid log flooding)
+              print("First 10 lines of M3U file:")
+              for line in lines[:10]:
+                  print(f"  {line}")
+              
               for i, line in enumerate(lines):
-                  if '#EXTINF' in line and 'tvg-name' in line:
+                  if '#EXTINF' in line:
                       # Extract channel name
                       channel_name = re.search(r'tvg-name="([^"]+)"', line)
                       if channel_name:
                           channel_name = channel_name.group(1)
                           print(f"Found channel: {channel_name}")
                       else:
-                          print(f"No tvg-name found in line: {line}")
+                          print(f"No tvg-name in line: {line}")
                           continue
                       # Get the next line (link) which may contain the cookie
                       link = lines[i + 1].strip() if i + 1 < len(lines) else ''
                       print(f"Link for {channel_name}: {link}")
-                      # Extract cookie (assuming __hdnea__ format)
-                      cookie_match = re.search(r'__hdnea__=[^|]+', link)
+                      # Try multiple cookie formats
+                      cookie_match = (
+                          re.search(r'__hdnea__=[^|&]+', link) or
+                          re.search(r'cookie=[^|&]+', link) or
+                          re.search(r'[^|&?]+\=[^|&]+', link)  # Generic key=value
+                      )
                       if cookie_match:
                           cookie = cookie_match.group(0)
                           cookies[channel_name] = cookie
                           print(f"Found cookie for {channel_name}: {cookie}")
                       else:
-                          print(f"No __hdnea__ cookie found in link: {link}")
+                          print(f"No cookie found in link: {link}")
               if not cookies:
                   print("No cookies found in M3U file")
               else:
