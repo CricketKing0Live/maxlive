@@ -36,6 +36,7 @@ jobs:
           import json
           import re
           import os
+          import glob
 
           # URL to fetch cookies
           m3u_url = "https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/jtv.m3u"
@@ -53,7 +54,7 @@ jobs:
           print(f"m3u content (first 3000 chars):\n{m3u_content[:3000]}")
 
           # Extract the first __hdnea__ cookie
-          cookie_pattern = r'__hdnea__=[^\s"\n;)(,]+'
+          cookie_pattern = r'__hdnea__=[^\s"\n;),]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
             print("Error: No __hdnea__ cookie found in the m3u file")
@@ -66,22 +67,25 @@ jobs:
           # Path to Ziotv.json
           json_file = "Ziotv.json"
 
-          # Check if Ziotv.json exists
+          # Check for Ziotv.json (case-sensitive and case-insensitive)
+          files_in_dir = glob.glob("[Zz][Ii][Oo][Tt][Vv].[Jj][Ss][Oo][Nn]") + os.listdir('.')
+          print(f"Files in current directory: {files_in_dir}")
           if not os.path.exists(json_file):
             print(f"Error: {json_file} not found in repository root")
-            print(f"Current directory contents: {os.listdir('.')}")
             exit(1)
 
           # Read Ziotv.json
           try:
             with open(json_file, 'r') as f:
-              data = json.load(f)
+              file_content = f.read()
+              print(f"Raw {json_file} content:\n{file_content[:3000]}")
+              data = json.loads(file_content)
           except json.JSONDecodeError as e:
             print(f"Error: Invalid JSON in {json_file}: {e}")
             exit(1)
 
-          # Debug: Print JSON structure
-          print(f"JSON data:\n{json.dumps(data, indent=2)[:3000]}")
+          # Debug: Print parsed JSON structure
+          print(f"Parsed JSON data:\n{json.dumps(data, indent=2)[:3000]}")
 
           # Update cookie field for all channels
           updated = False
@@ -124,9 +128,13 @@ jobs:
             exit(1)
 
           # Debug: Verify file content after writing
-          with open(json_file, 'r') as f:
-            updated_content = f.read()
-          print(f"Updated {json_file} content:\n{updated_content[:3000]}")
+          try:
+            with open(json_file, 'r') as f:
+              updated_content = f.read()
+            print(f"Updated {json_file} content:\n{updated_content[:3000]}")
+          except Exception as e:
+            print(f"Error reading updated {json_file}: {e}")
+            exit(1)
           EOF
 
       # Commit and push changes with github-actions bot
