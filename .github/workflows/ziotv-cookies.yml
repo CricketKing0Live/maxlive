@@ -1,8 +1,8 @@
-name: Update Cookies in Ziotv.json
+name: Update JioTV Cookies
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # Runs every 4 hours (UTC, 5:30 AM, 9:30 AM, 1:30 PM, 5:30 PM IST)
+    - cron: '0 0 * * *' # Runs daily at midnight UTC
   workflow_dispatch: # Allows manual triggering
 
 jobs:
@@ -10,104 +10,89 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
+      # Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python
+      # Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      # Step 3: Install dependencies
+      # Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
 
-      # Step 4: Create and run update script
-      - name: Create and run update script
+      # Fetch cookies and update Ziotv.json
+      - name: Fetch cookies and update JSON
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cat << 'EOF' > update_cookies.py
-          import json
+          python - <<EOF
           import requests
+          import json
+          import re
           import os
 
-          # Environment variables
-          MAIN_URL = os.getenv('MAIN_URL')
-          PLAYLIST_FILE = os.getenv('PLAYLIST_FILE')
+          # URL to fetch cookies
+          m3u_url = "https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/jtv.m3u"
 
-          def fetch_cookie(url):
-              """Fetch cookie value from the main URL."""
-              try:
-                  response = requests.get(url)
-                  response.raise_for_status()
-                  try:
-                      data = response.json()
-                      cookie = data.get('cookie')
-                      if cookie:
-                          print(f"Got cookie: {cookie}")
-                          return cookie
-                      print("Error: No 'cookie' key in JSON")
-                      return None
-                  except ValueError:
-                      print("Error: URL did not return valid JSON")
-                      return None
-              except requests.RequestException as e:
-                  print(f"Error: Could not fetch URL: {e}")
-                  return None
+          # Fetch the m3u file
+          response = requests.get(m3u_url)
+          response.raise_for_status()
+          m3u_content = response.text
 
-          def update_json_playlist(playlist_file, cookie):
-              """Update cookie in Ziotv.json."""
-              try:
-                  if not os.path.exists(playlist_file):
-                      print(f"Error: {playlist_file} not found")
-                      return False
-                  
-                  with open(playlist_file, 'r') as f:
-                      playlist = json.load(f)
-                  
-                  for channel in playlist:
-                      channel['cookie'] = cookie
-                  
-                  with open(playlist_file, 'w') as f:
-                      json.dump(playlist, f, indent=2)
-                  print(f"Updated {playlist_file}")
-                  return True
-              except Exception as e:
-                  print(f"Error updating {playlist_file}: {e}")
-                  return False
+          # Extract cookies using regex
+          cookie_pattern = r'__hdnea__=[^;]+'
+          cookie_match = re.search(cookie_pattern, m3u_content)
+          if not cookie_match:
+            print("No cookie found in the m3u file")
+            exit(1)
+          new_cookie = cookie_match.group(0)
 
-          def main():
-              cookie = fetch_cookie(MAIN_URL)
-              if not cookie:
-                  print("No cookie fetched, exiting")
-                  return
-              
-              if not update_json_playlist(PLAYLIST_FILE, cookie):
-                  print("Failed to update playlist")
-                  return
-              
-              print("Cookie update done")
+          # Path to Ziotv.json
+          json_file = "Ziotv.json"
 
-          if __name__ == '__main__':
-              main()
+          # Read existing Ziotv.json
+          if os.path.exists(json_file):
+            with open(json_file, 'r') as f:
+              data = json.load(f)
+          else:
+            print(f"{json_file} not found")
+            exit(1)
+
+          # Update cookie in the JSON data
+          updated = False
+          if isinstance(data, list):
+            for item in data:
+              if "cookie" in item:
+                item["cookie"] = new_cookie
+                updated = True
+          elif isinstance(data, dict) and "cookie" in data:
+            data["cookie"] = new_cookie
+            updated = True
+
+          if not updated:
+            print("No cookie field found to update in JSON")
+            exit(1)
+
+          # Write updated JSON back to file
+          with open(json_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+          print("Cookies updated successfully")
           EOF
 
-          python update_cookies.py
-          rm update_cookies.py # Clean up temporary script
-        env:
-          MAIN_URL: https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/jtv.m3u
-          PLAYLIST_FILE: Ziotv.json
-
-      # Step 5: Commit and push changes
+      # Commit and push changes
       - name: Commit changes
         run: |
-          git config --global user.name 'GitHub Action'
-          git config --global user.email 'action@github.com'
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
           git add Ziotv.json
-          git commit -m 'Auto-update cookies in Ziotv.json' || echo "No changes to commit"
+          git commit -m "Update cookies in Ziotv.json" || echo "No changes to commit"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
