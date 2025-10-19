@@ -39,17 +39,27 @@ jobs:
           m3u_url = "https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/jtv.m3u"
 
           # Fetch the m3u file
-          response = requests.get(m3u_url)
-          response.raise_for_status()
-          m3u_content = response.text
+          try:
+            response = requests.get(m3u_url)
+            response.raise_for_status()
+            m3u_content = response.text
+          except requests.RequestException as e:
+            print(f"Error fetching m3u file: {e}")
+            exit(1)
 
-          # Extract cookie using regex
-          cookie_pattern = r'__hdnea__=[^;]+'
+          # Debug: Print m3u content (first 500 chars) to check cookie presence
+          print(f"m3u content (first 500 chars): {m3u_content[:500]}")
+
+          # Extract exact cookie string
+          cookie_pattern = r'__hdnea__=[^"\n]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
             print("Error: No cookie found in the m3u file")
             exit(1)
-          new_cookie = cookie_match.group(0)
+          new_cookie = cookie_match.group(0).strip()
+
+          # Debug: Print extracted cookie
+          print(f"Extracted cookie: {new_cookie}")
 
           # Path to Ziotv.json
           json_file = "Ziotv.json"
@@ -58,24 +68,43 @@ jobs:
           if not os.path.exists(json_file):
             print(f"Error: {json_file} not found")
             exit(1)
-          with open(json_file, 'r') as f:
-            data = json.load(f)
+          try:
+            with open(json_file, 'r') as f:
+              data = json.load(f)
+          except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in {json_file}: {e}")
+            exit(1)
+
+          # Debug: Print JSON structure
+          print(f"JSON data: {json.dumps(data, indent=2)[:500]}")
 
           # Update cookie field
+          updated = False
           if isinstance(data, list):
             for item in data:
-              item["cookie"] = new_cookie
+              if "cookie" in item:
+                item["cookie"] = new_cookie
+                updated = True
           elif isinstance(data, dict):
-            data["cookie"] = new_cookie
+            if "cookie" in data:
+              data["cookie"] = new_cookie
+              updated = True
           else:
             print("Error: Invalid JSON structure in Ziotv.json")
             exit(1)
 
-          # Write updated JSON back
-          with open(json_file, 'w') as f:
-            json.dump(data, f, indent=2)
+          if not updated:
+            print("Error: No cookie field found in Ziotv.json")
+            exit(1)
 
-          print("Cookies updated successfully")
+          # Write updated JSON back
+          try:
+            with open(json_file, 'w') as f:
+              json.dump(data, f, indent=2)
+            print("Cookies updated successfully")
+          except Exception as e:
+            print(f"Error writing to {json_file}: {e}")
+            exit(1)
           EOF
 
       # Commit and push changes
