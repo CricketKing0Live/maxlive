@@ -13,6 +13,8 @@ jobs:
       # Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history to ensure git can detect changes
 
       # Set up Python
       - name: Set up Python
@@ -47,11 +49,11 @@ jobs:
             print(f"Error fetching m3u file: {e}")
             exit(1)
 
-          # Debug: Print m3u content (first 500 chars) to check cookie presence
-          print(f"m3u content (first 500 chars): {m3u_content[:500]}")
+          # Debug: Print m3u content (first 1000 chars) to check cookie presence
+          print(f"m3u content (first 1000 chars): {m3u_content[:1000]}")
 
           # Extract exact cookie string
-          cookie_pattern = r'__hdnea__=[^"\n]+'
+          cookie_pattern = r'__hdnea__=[^"\n;]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
             print("Error: No cookie found in the m3u file")
@@ -64,10 +66,12 @@ jobs:
           # Path to Ziotv.json
           json_file = "Ziotv.json"
 
-          # Read Ziotv.json
+          # Check if Ziotv.json exists
           if not os.path.exists(json_file):
-            print(f"Error: {json_file} not found")
+            print(f"Error: {json_file} not found in repository root")
             exit(1)
+
+          # Read Ziotv.json
           try:
             with open(json_file, 'r') as f:
               data = json.load(f)
@@ -76,44 +80,47 @@ jobs:
             exit(1)
 
           # Debug: Print JSON structure
-          print(f"JSON data: {json.dumps(data, indent=2)[:500]}")
+          print(f"JSON data (first 1000 chars): {json.dumps(data, indent=2)[:1000]}")
 
           # Update cookie field
           updated = False
           if isinstance(data, list):
             for item in data:
-              if "cookie" in item:
+              if isinstance(item, dict) and "cookie" in item:
+                old_cookie = item["cookie"]
                 item["cookie"] = new_cookie
                 updated = True
-          elif isinstance(data, dict):
-            if "cookie" in data:
-              data["cookie"] = new_cookie
-              updated = True
+                print(f"Updated cookie for {item.get('name', 'unknown')}: {old_cookie} -> {new_cookie}")
+          elif isinstance(data, dict) and "cookie" in data:
+            old_cookie = data["cookie"]
+            data["cookie"] = new_cookie
+            updated = True
+            print(f"Updated cookie: {old_cookie} -> {new_cookie}")
           else:
-            print("Error: Invalid JSON structure in Ziotv.json")
+            print("Error: No valid cookie field found or invalid JSON structure in Ziotv.json")
             exit(1)
 
           if not updated:
-            print("Error: No cookie field found in Ziotv.json")
+            print("Error: No cookie field updated in Ziotv.json")
             exit(1)
 
           # Write updated JSON back
           try:
             with open(json_file, 'w') as f:
               json.dump(data, f, indent=2)
-            print("Cookies updated successfully")
+            print(f"Successfully wrote updated {json_file}")
           except Exception as e:
             print(f"Error writing to {json_file}: {e}")
             exit(1)
           EOF
 
-      # Commit and push changes
-      - name: Commit changes
+      # Commit and push changes (force commit even if no changes)
+      - name: Commit and push changes
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add Ziotv.json
-          git commit -m "Update cookies in Ziotv.json" || echo "No changes to commit"
+          git commit -m "Update cookies in Ziotv.json (Run: $(date -u '+%Y-%m-%d %H:%M:%S UTC'))" --allow-empty
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
