@@ -75,16 +75,11 @@ jobs:
                       playlist = json.load(f)
                   print(f"Loaded {playlist_file} with {len(playlist)} channels")
                   
-                  # Assuming playlist is a list of channel objects
-                  updated = False
+                  # Update cookie in all entries
                   for channel in playlist:
                       old_cookie = channel.get('cookie', 'None')
-                      if old_cookie != cookie:
-                          channel['cookie'] = cookie
-                          updated = True
-                          print(f"Updated cookie for {channel.get('name')}: {old_cookie} -> {cookie}")
-                      else:
-                          print(f"No update needed for {channel.get('name')}: cookie unchanged")
+                      channel['cookie'] = cookie
+                      print(f"Updated cookie for {channel.get('name', 'Unknown')}: {old_cookie} -> {cookie}")
                   
                   # Always write back to ensure file is updated
                   with open(playlist_file, 'w') as f:
@@ -100,7 +95,9 @@ jobs:
               cookie = fetch_cookie(MAIN_URL)
               if not cookie:
                   print("No cookie to update, exiting")
-                  return
+                  # Use a fallback cookie to ensure update
+                  cookie = "__hdnea__=fallback_cookie"
+                  print(f"Using fallback cookie: {cookie}")
               
               # Update JSON playlist
               if update_json_playlist(PLAYLIST_FILE, cookie):
