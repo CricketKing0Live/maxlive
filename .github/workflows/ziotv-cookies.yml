@@ -50,14 +50,13 @@ jobs:
             print(f"Error fetching m3u file: {e}")
             exit(1)
 
-          # Debug: Print m3u content (first 5000 chars) to check cookie presence
+          # Debug: Print m3u content (first 5000 chars)
           print(f"m3u content (first 5000 chars):\n{m3u_content[:5000]}")
 
           # Extract the first __hdnea__ cookie
           cookie_pattern = r'__hdnea__=[^\s"\n;),]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
-            # Fallback: Try a broader pattern
             fallback_pattern = r'__hdnea__=[^"\n]+'
             cookie_match = re.search(fallback_pattern, m3u_content)
             if not cookie_match:
@@ -78,14 +77,28 @@ jobs:
             print(f"Error: {json_file} not found in repository root")
             exit(1)
 
+          # Verify file is writable
+          try:
+            with open(json_file, 'a') as f:
+              pass  # Test append mode to confirm writability
+          except Exception as e:
+            print(f"Error: {json_file} is not writable: {e}")
+            exit(1)
+
           # Read Ziotv.json
           try:
             with open(json_file, 'r') as f:
               file_content = f.read()
+              if not file_content.strip():
+                print(f"Error: {json_file} is empty")
+                exit(1)
               print(f"Raw {json_file} content:\n{file_content[:5000]}")
               data = json.loads(file_content)
           except json.JSONDecodeError as e:
             print(f"Error: Invalid JSON in {json_file}: {e}")
+            exit(1)
+          except Exception as e:
+            print(f"Error reading {json_file}: {e}")
             exit(1)
 
           # Debug: Print parsed JSON structure
@@ -99,26 +112,32 @@ jobs:
                 print(f"Warning: Item at index {index} is not a dictionary, skipping")
                 continue
               if "cookie" not in item:
-                print(f"Warning: No cookie field in item at index {index} (name: {item.get('name', 'unknown')}), skipping")
-                continue
-              old_cookie = item["cookie"]
-              item["cookie"] = new_cookie
-              updated = True
-              print(f"Updated cookie for {item.get('name', 'unknown')} (index {index}): {old_cookie} -> {new_cookie}")
+                print(f"Warning: No cookie field in item at index {index} (name: {item.get('name', 'unknown')}), adding cookie field")
+                item["cookie"] = new_cookie
+                updated = True
+                print(f"Added cookie for {item.get('name', 'unknown')} (index {index}): {new_cookie}")
+              else:
+                old_cookie = item["cookie"]
+                item["cookie"] = new_cookie
+                updated = True
+                print(f"Updated cookie for {item.get('name', 'unknown')} (index {index}): {old_cookie} -> {new_cookie}")
           elif isinstance(data, dict):
             if "cookie" not in data:
-              print("Error: No cookie field in Ziotv.json dictionary")
-              exit(1)
-            old_cookie = data["cookie"]
-            data["cookie"] = new_cookie
-            updated = True
-            print(f"Updated cookie: {old_cookie} -> {new_cookie}")
+              print(f"Warning: No cookie field in Ziotv.json dictionary, adding cookie field")
+              data["cookie"] = new_cookie
+              updated = True
+              print(f"Added cookie: {new_cookie}")
+            else:
+              old_cookie = data["cookie"]
+              data["cookie"] = new_cookie
+              updated = True
+              print(f"Updated cookie: {old_cookie} -> {new_cookie}")
           else:
             print("Error: Ziotv.json is neither a list nor a dictionary")
             exit(1)
 
           if not updated:
-            print("Error: No cookie fields were updated in Ziotv.json")
+            print("Error: No cookie fields were updated or added in Ziotv.json")
             exit(1)
 
           # Write updated JSON back
