@@ -43,65 +43,54 @@ jobs:
               try:
                   response = requests.get(url)
                   response.raise_for_status()
-                  print(f"Successfully fetched data from {url}")
-                  # Log the first 500 characters of the response for debugging
-                  print(f"Raw response (first 500 chars): {response.text[:500]}")
                   try:
                       data = response.json()
                       cookie = data.get('cookie')
                       if cookie:
-                          print(f"Found cookie: {cookie}")
+                          print(f"Successfully fetched cookie: {cookie}")
                           return cookie
                       else:
-                          print("No 'cookie' key found in JSON response")
+                          print("Error: No 'cookie' key found in JSON response")
                           return None
-                  except ValueError as e:
-                      print(f"Error parsing JSON response: {e}")
-                      print(f"Full response content: {response.text}")
+                  except ValueError:
+                      print("Error: Invalid JSON response from URL")
                       return None
               except requests.RequestException as e:
-                  print(f"Error fetching data from {url}: {e}")
+                  print(f"Error: Failed to fetch data from {url}: {e}")
                   return None
 
           def update_json_playlist(playlist_file, cookie):
               """Update cookie in all entries of the JSON playlist."""
               try:
-                  # Check if file exists
                   if not os.path.exists(playlist_file):
                       print(f"Error: {playlist_file} does not exist")
                       return False
                   
                   with open(playlist_file, 'r') as f:
                       playlist = json.load(f)
-                  print(f"Loaded {playlist_file} with {len(playlist)} channels")
                   
-                  # Update cookie in all entries
                   for channel in playlist:
-                      old_cookie = channel.get('cookie', 'None')
                       channel['cookie'] = cookie
-                      print(f"Updated cookie for {channel.get('name', 'Unknown')}: {old_cookie} -> {cookie}")
                   
-                  # Always write back to ensure file is updated
                   with open(playlist_file, 'w') as f:
                       json.dump(playlist, f, indent=2)
-                  print(f"Wrote updated content to {playlist_file}")
+                  print(f"Successfully updated {playlist_file}")
                   return True
               except Exception as e:
-                  print(f"Error updating JSON playlist: {e}")
+                  print(f"Error updating {playlist_file}: {e}")
                   return False
 
           def main():
-              # Fetch cookie from JSON
               cookie = fetch_cookie(MAIN_URL)
               if not cookie:
-                  print("No valid cookie fetched, exiting without updating playlist")
+                  print("No valid cookie fetched, exiting")
                   return
               
-              # Update JSON playlist
-              if update_json_playlist(PLAYLIST_FILE, cookie):
-                  print("Playlist update successful")
-              else:
-                  print("Playlist update failed")
+              if not update_json_playlist(PLAYLIST_FILE, cookie):
+                  print("Failed to update playlist")
+                  return
+              
+              print("Cookie update completed")
 
           if __name__ == '__main__':
               main()
