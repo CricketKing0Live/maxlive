@@ -52,7 +52,7 @@ jobs:
           # Debug: Print m3u content (first 2000 chars) to check cookie presence
           print(f"m3u content (first 2000 chars):\n{m3u_content[:2000]}")
 
-          # Extract exact cookie string with flexible regex
+          # Extract the first __hdnea__ cookie
           cookie_pattern = r'__hdnea__=[^\s"\n;)(]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
@@ -82,7 +82,7 @@ jobs:
           # Debug: Print JSON structure
           print(f"JSON data:\n{json.dumps(data, indent=2)[:2000]}")
 
-          # Update cookie field
+          # Update cookie field for all channels
           updated = False
           if isinstance(data, list):
             for index, item in enumerate(data):
