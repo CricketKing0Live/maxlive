@@ -50,16 +50,20 @@ jobs:
             print(f"Error fetching m3u file: {e}")
             exit(1)
 
-          # Debug: Print m3u content (first 3000 chars) to check cookie presence
-          print(f"m3u content (first 3000 chars):\n{m3u_content[:3000]}")
+          # Debug: Print m3u content (first 5000 chars) to check cookie presence
+          print(f"m3u content (first 5000 chars):\n{m3u_content[:5000]}")
 
           # Extract the first __hdnea__ cookie
           cookie_pattern = r'__hdnea__=[^\s"\n;),]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
-            print("Error: No __hdnea__ cookie found in the m3u file")
-            exit(1)
-          new_cookie = cookie_match.group(0).strip()
+            # Fallback: Try a broader pattern
+            fallback_pattern = r'__hdnea__=[^"\n]+'
+            cookie_match = re.search(fallback_pattern, m3u_content)
+            if not cookie_match:
+              print("Error: No __hdnea__ cookie found in the m3u file")
+              exit(1)
+          new_cookie = cookie_match.group(0).rstrip(';').strip()
 
           # Debug: Print extracted cookie
           print(f"Extracted cookie: {new_cookie}")
@@ -78,24 +82,24 @@ jobs:
           try:
             with open(json_file, 'r') as f:
               file_content = f.read()
-              print(f"Raw {json_file} content:\n{file_content[:3000]}")
+              print(f"Raw {json_file} content:\n{file_content[:5000]}")
               data = json.loads(file_content)
           except json.JSONDecodeError as e:
             print(f"Error: Invalid JSON in {json_file}: {e}")
             exit(1)
 
           # Debug: Print parsed JSON structure
-          print(f"Parsed JSON data:\n{json.dumps(data, indent=2)[:3000]}")
+          print(f"Parsed JSON data:\n{json.dumps(data, indent=2)[:5000]}")
 
           # Update cookie field for all channels
           updated = False
           if isinstance(data, list):
             for index, item in enumerate(data):
               if not isinstance(item, dict):
-                print(f"Error: Item at index {index} is not a dictionary")
+                print(f"Warning: Item at index {index} is not a dictionary, skipping")
                 continue
               if "cookie" not in item:
-                print(f"Error: No cookie field in item at index {index} (name: {item.get('name', 'unknown')})")
+                print(f"Warning: No cookie field in item at index {index} (name: {item.get('name', 'unknown')}), skipping")
                 continue
               old_cookie = item["cookie"]
               item["cookie"] = new_cookie
@@ -131,7 +135,7 @@ jobs:
           try:
             with open(json_file, 'r') as f:
               updated_content = f.read()
-            print(f"Updated {json_file} content:\n{updated_content[:3000]}")
+            print(f"Updated {json_file} content:\n{updated_content[:5000]}")
           except Exception as e:
             print(f"Error reading updated {json_file}: {e}")
             exit(1)
