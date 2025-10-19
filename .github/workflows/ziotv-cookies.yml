@@ -39,7 +39,7 @@ jobs:
           PLAYLIST_FILE = os.getenv('PLAYLIST_FILE')
 
           def fetch_cookie(url):
-              """Step 1: Fetch cookie from the main URL."""
+              """Fetch cookie value from the main URL."""
               try:
                   response = requests.get(url)
                   response.raise_for_status()
@@ -59,7 +59,7 @@ jobs:
                   return None
 
           def update_json_playlist(playlist_file, cookie):
-              """Step 2: Update cookie in Ziotv.json."""
+              """Update cookie in Ziotv.json."""
               try:
                   if not os.path.exists(playlist_file):
                       print(f"Error: {playlist_file} not found")
@@ -80,22 +80,23 @@ jobs:
                   return False
 
           def main():
-              """Step 3: Main logic."""
               cookie = fetch_cookie(MAIN_URL)
               if not cookie:
                   print("No cookie fetched, exiting")
                   return
               
-              if update_json_playlist(PLAYLIST_FILE, cookie):
-                  print("Cookie update done")
-              else:
+              if not update_json_playlist(PLAYLIST_FILE, cookie):
                   print("Failed to update playlist")
+                  return
+              
+              print("Cookie update done")
 
           if __name__ == '__main__':
               main()
           EOF
 
           python update_cookies.py
+          rm update_cookies.py # Clean up temporary script
         env:
           MAIN_URL: https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/jtv.m3u
           PLAYLIST_FILE: Ziotv.json
