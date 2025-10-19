@@ -2,7 +2,7 @@ name: Update JioTV Cookies
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight UTC
+    - cron: '0 */6 * * *' # Runs every 6 hours (0:00, 6:00, 12:00, 18:00 UTC)
   workflow_dispatch: # Allows manual triggering
 
 jobs:
