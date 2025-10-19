@@ -44,19 +44,23 @@ jobs:
                   response = requests.get(url)
                   response.raise_for_status()
                   print(f"Successfully fetched data from {url}")
-                  data = response.json()
-                  cookie = data.get('cookie')
-                  if cookie:
-                      print(f"Found cookie: {cookie}")
-                      return cookie
-                  else:
-                      print("No 'cookie' key found in JSON response")
+                  # Log the first 500 characters of the response for debugging
+                  print(f"Raw response (first 500 chars): {response.text[:500]}")
+                  try:
+                      data = response.json()
+                      cookie = data.get('cookie')
+                      if cookie:
+                          print(f"Found cookie: {cookie}")
+                          return cookie
+                      else:
+                          print("No 'cookie' key found in JSON response")
+                          return None
+                  except ValueError as e:
+                      print(f"Error parsing JSON response: {e}")
+                      print(f"Full response content: {response.text}")
                       return None
               except requests.RequestException as e:
-                  print(f"Error fetching JSON from {url}: {e}")
-                  return None
-              except ValueError as e:
-                  print(f"Error parsing JSON response: {e}")
+                  print(f"Error fetching data from {url}: {e}")
                   return None
 
           def update_json_playlist(playlist_file, cookie):
