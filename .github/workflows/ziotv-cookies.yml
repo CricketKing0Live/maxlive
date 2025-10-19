@@ -2,7 +2,7 @@ name: Update Cookies in Ziotv.json
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # Runs every 4 hours
+    - cron: '0 */4 * * *' # Runs every 4 hours (UTC)
   workflow_dispatch: # Allows manual triggering
 
 jobs:
@@ -44,6 +44,7 @@ jobs:
               try:
                   response = requests.get(url)
                   response.raise_for_status()
+                  print(f"Successfully fetched M3U file from {url}")
                   return response.text
               except requests.RequestException as e:
                   print(f"Error fetching M3U file: {e}")
@@ -53,19 +54,32 @@ jobs:
               """Parse cookies from M3U file."""
               cookies = {}
               lines = m3u_content.splitlines()
+              print(f"Total lines in M3U file: {len(lines)}")
               for i, line in enumerate(lines):
                   if '#EXTINF' in line and 'tvg-name' in line:
                       # Extract channel name
                       channel_name = re.search(r'tvg-name="([^"]+)"', line)
                       if channel_name:
                           channel_name = channel_name.group(1)
+                          print(f"Found channel: {channel_name}")
+                      else:
+                          print(f"No tvg-name found in line: {line}")
+                          continue
                       # Get the next line (link) which may contain the cookie
                       link = lines[i + 1].strip() if i + 1 < len(lines) else ''
+                      print(f"Link for {channel_name}: {link}")
                       # Extract cookie (assuming __hdnea__ format)
                       cookie_match = re.search(r'__hdnea__=[^|]+', link)
                       if cookie_match:
                           cookie = cookie_match.group(0)
                           cookies[channel_name] = cookie
+                          print(f"Found cookie for {channel_name}: {cookie}")
+                      else:
+                          print(f"No __hdnea__ cookie found in link: {link}")
+              if not cookies:
+                  print("No cookies found in M3U file")
+              else:
+                  print(f"Extracted cookies for {len(cookies)} channels")
               return cookies
 
           def update_json_playlist(playlist_file, cookies):
@@ -73,14 +87,19 @@ jobs:
               try:
                   with open(playlist_file, 'r') as f:
                       playlist = json.load(f)
+                  print(f"Loaded {playlist_file} with {len(playlist)} channels")
                   
                   # Assuming playlist is a list of channel objects
                   updated = False
                   for channel in playlist:
                       channel_name = channel.get('name')
                       if channel_name in cookies:
+                          old_cookie = channel.get('cookie', 'None')
                           channel['cookie'] = cookies[channel_name]
                           updated = True
+                          print(f"Updated cookie for {channel_name}: {old_cookie} -> {cookies[channel_name]}")
+                      else:
+                          print(f"No cookie found for channel {channel_name}")
                   
                   if updated:
                       # Write updated JSON back to file
@@ -96,12 +115,13 @@ jobs:
               # Fetch M3U content
               m3u_content = fetch_m3u_content(MAIN_URL)
               if not m3u_content:
+                  print("Failed to fetch M3U content, exiting")
                   return
               
               # Parse cookies from M3U
               cookies = parse_m3u_cookies(m3u_content)
               if not cookies:
-                  print("No cookies found in M3U file")
+                  print("No cookies to update, exiting")
                   return
               
               # Update JSON playlist
