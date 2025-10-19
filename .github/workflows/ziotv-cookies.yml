@@ -39,7 +39,7 @@ jobs:
           PLAYLIST_FILE = os.getenv('PLAYLIST_FILE')
 
           def fetch_cookie(url):
-              """Fetch cookie from the main URL (JSON format)."""
+              """Step 1: Fetch cookie from the main URL."""
               try:
                   response = requests.get(url)
                   response.raise_for_status()
@@ -47,23 +47,22 @@ jobs:
                       data = response.json()
                       cookie = data.get('cookie')
                       if cookie:
-                          print(f"Successfully fetched cookie: {cookie}")
+                          print(f"Got cookie: {cookie}")
                           return cookie
-                      else:
-                          print("Error: No 'cookie' key found in JSON response")
-                          return None
+                      print("Error: No 'cookie' key in JSON")
+                      return None
                   except ValueError:
-                      print("Error: Invalid JSON response from URL")
+                      print("Error: URL did not return valid JSON")
                       return None
               except requests.RequestException as e:
-                  print(f"Error: Failed to fetch data from {url}: {e}")
+                  print(f"Error: Could not fetch URL: {e}")
                   return None
 
           def update_json_playlist(playlist_file, cookie):
-              """Update cookie in all entries of the JSON playlist."""
+              """Step 2: Update cookie in Ziotv.json."""
               try:
                   if not os.path.exists(playlist_file):
-                      print(f"Error: {playlist_file} does not exist")
+                      print(f"Error: {playlist_file} not found")
                       return False
                   
                   with open(playlist_file, 'r') as f:
@@ -74,23 +73,23 @@ jobs:
                   
                   with open(playlist_file, 'w') as f:
                       json.dump(playlist, f, indent=2)
-                  print(f"Successfully updated {playlist_file}")
+                  print(f"Updated {playlist_file}")
                   return True
               except Exception as e:
                   print(f"Error updating {playlist_file}: {e}")
                   return False
 
           def main():
+              """Step 3: Main logic."""
               cookie = fetch_cookie(MAIN_URL)
               if not cookie:
-                  print("No valid cookie fetched, exiting")
+                  print("No cookie fetched, exiting")
                   return
               
-              if not update_json_playlist(PLAYLIST_FILE, cookie):
+              if update_json_playlist(PLAYLIST_FILE, cookie):
+                  print("Cookie update done")
+              else:
                   print("Failed to update playlist")
-                  return
-              
-              print("Cookie update completed")
 
           if __name__ == '__main__':
               main()
