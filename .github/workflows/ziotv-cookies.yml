@@ -94,10 +94,8 @@ jobs:
               # Fetch cookie from JSON
               cookie = fetch_cookie(MAIN_URL)
               if not cookie:
-                  print("No cookie to update, exiting")
-                  # Use a fallback cookie to ensure update
-                  cookie = "__hdnea__=fallback_cookie"
-                  print(f"Using fallback cookie: {cookie}")
+                  print("No valid cookie fetched, exiting without updating playlist")
+                  return
               
               # Update JSON playlist
               if update_json_playlist(PLAYLIST_FILE, cookie):
