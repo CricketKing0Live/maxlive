@@ -42,21 +42,21 @@ jobs:
 
           # Fetch the m3u file
           try:
-            response = requests.get(m3u_url)
+            response = requests.get(m3u_url, timeout=10)
             response.raise_for_status()
             m3u_content = response.text
           except requests.RequestException as e:
             print(f"Error fetching m3u file: {e}")
             exit(1)
 
-          # Debug: Print m3u content (first 1000 chars) to check cookie presence
-          print(f"m3u content (first 1000 chars): {m3u_content[:1000]}")
+          # Debug: Print m3u content (first 2000 chars) to check cookie presence
+          print(f"m3u content (first 2000 chars):\n{m3u_content[:2000]}")
 
-          # Extract exact cookie string
-          cookie_pattern = r'__hdnea__=[^"\n;]+'
+          # Extract exact cookie string with flexible regex
+          cookie_pattern = r'__hdnea__=[^\s"\n;)(]+'
           cookie_match = re.search(cookie_pattern, m3u_content)
           if not cookie_match:
-            print("Error: No cookie found in the m3u file")
+            print("Error: No __hdnea__ cookie found in the m3u file")
             exit(1)
           new_cookie = cookie_match.group(0).strip()
 
@@ -80,45 +80,54 @@ jobs:
             exit(1)
 
           # Debug: Print JSON structure
-          print(f"JSON data (first 1000 chars): {json.dumps(data, indent=2)[:1000]}")
+          print(f"JSON data:\n{json.dumps(data, indent=2)[:2000]}")
 
           # Update cookie field
           updated = False
           if isinstance(data, list):
-            for item in data:
-              if isinstance(item, dict) and "cookie" in item:
-                old_cookie = item["cookie"]
-                item["cookie"] = new_cookie
-                updated = True
-                print(f"Updated cookie for {item.get('name', 'unknown')}: {old_cookie} -> {new_cookie}")
-          elif isinstance(data, dict) and "cookie" in data:
+            for index, item in enumerate(data):
+              if not isinstance(item, dict):
+                print(f"Error: Item at index {index} is not a dictionary")
+                continue
+              if "cookie" not in item:
+                print(f"Error: No cookie field in item at index {index} (name: {item.get('name', 'unknown')})")
+                continue
+              old_cookie = item["cookie"]
+              item["cookie"] = new_cookie
+              updated = True
+              print(f"Updated cookie for {item.get('name', 'unknown')} (index {index}): {old_cookie} -> {new_cookie}")
+          elif isinstance(data, dict):
+            if "cookie" not in data:
+              print("Error: No cookie field in Ziotv.json dictionary")
+              exit(1)
             old_cookie = data["cookie"]
             data["cookie"] = new_cookie
             updated = True
             print(f"Updated cookie: {old_cookie} -> {new_cookie}")
           else:
-            print("Error: No valid cookie field found or invalid JSON structure in Ziotv.json")
+            print("Error: Ziotv.json is neither a list nor a dictionary")
             exit(1)
 
           if not updated:
-            print("Error: No cookie field updated in Ziotv.json")
+            print("Error: No cookie fields were updated in Ziotv.json")
             exit(1)
 
           # Write updated JSON back
           try:
             with open(json_file, 'w') as f:
               json.dump(data, f, indent=2)
+              f.write('\n') # Ensure file ends with newline
             print(f"Successfully wrote updated {json_file}")
           except Exception as e:
             print(f"Error writing to {json_file}: {e}")
             exit(1)
           EOF
 
-      # Commit and push changes (force commit even if no changes)
+      # Commit and push changes with github-actions bot
       - name: Commit and push changes
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add Ziotv.json
           git commit -m "Update cookies in Ziotv.json (Run: $(date -u '+%Y-%m-%d %H:%M:%S UTC'))" --allow-empty
           git push
