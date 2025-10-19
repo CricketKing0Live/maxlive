@@ -66,6 +66,11 @@ jobs:
           def update_json_playlist(playlist_file, cookie):
               """Update cookie in all entries of the JSON playlist."""
               try:
+                  # Check if file exists
+                  if not os.path.exists(playlist_file):
+                      print(f"Error: {playlist_file} does not exist")
+                      return False
+                  
                   with open(playlist_file, 'r') as f:
                       playlist = json.load(f)
                   print(f"Loaded {playlist_file} with {len(playlist)} channels")
@@ -74,19 +79,21 @@ jobs:
                   updated = False
                   for channel in playlist:
                       old_cookie = channel.get('cookie', 'None')
-                      channel['cookie'] = cookie
-                      updated = True
-                      print(f"Updated cookie for {channel.get('name')}: {old_cookie} -> {cookie}")
+                      if old_cookie != cookie:
+                          channel['cookie'] = cookie
+                          updated = True
+                          print(f"Updated cookie for {channel.get('name')}: {old_cookie} -> {cookie}")
+                      else:
+                          print(f"No update needed for {channel.get('name')}: cookie unchanged")
                   
-                  if updated:
-                      # Write updated JSON back to file
-                      with open(playlist_file, 'w') as f:
-                          json.dump(playlist, f, indent=2)
-                      print(f"Updated cookies in {playlist_file}")
-                  else:
-                      print("No channels found to update cookies")
+                  # Always write back to ensure file is updated
+                  with open(playlist_file, 'w') as f:
+                      json.dump(playlist, f, indent=2)
+                  print(f"Wrote updated content to {playlist_file}")
+                  return True
               except Exception as e:
                   print(f"Error updating JSON playlist: {e}")
+                  return False
 
           def main():
               # Fetch cookie from JSON
@@ -96,7 +103,10 @@ jobs:
                   return
               
               # Update JSON playlist
-              update_json_playlist(PLAYLIST_FILE, cookie)
+              if update_json_playlist(PLAYLIST_FILE, cookie):
+                  print("Playlist update successful")
+              else:
+                  print("Playlist update failed")
 
           if __name__ == '__main__':
               main()
