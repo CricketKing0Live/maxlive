@@ -33,66 +33,34 @@ jobs:
           import json
           import requests
           import os
-          import re
 
           # Environment variables
           MAIN_URL = os.getenv('MAIN_URL')
           PLAYLIST_FILE = os.getenv('PLAYLIST_FILE')
 
-          def fetch_m3u_content(url):
-              """Fetch content from the main URL."""
+          def fetch_cookie(url):
+              """Fetch cookie from the main URL (JSON format)."""
               try:
                   response = requests.get(url)
                   response.raise_for_status()
-                  print(f"Successfully fetched M3U file from {url}")
-                  return response.text
+                  print(f"Successfully fetched data from {url}")
+                  data = response.json()
+                  cookie = data.get('cookie')
+                  if cookie:
+                      print(f"Found cookie: {cookie}")
+                      return cookie
+                  else:
+                      print("No 'cookie' key found in JSON response")
+                      return None
               except requests.RequestException as e:
-                  print(f"Error fetching M3U file: {e}")
+                  print(f"Error fetching JSON from {url}: {e}")
+                  return None
+              except ValueError as e:
+                  print(f"Error parsing JSON response: {e}")
                   return None
 
-          def parse_m3u_cookies(m3u_content):
-              """Parse cookies from M3U file."""
-              cookies = {}
-              lines = m3u_content.splitlines()
-              print(f"Total lines in M3U file: {len(lines)}")
-              # Print first 10 lines for debugging (limit to avoid log flooding)
-              print("First 10 lines of M3U file:")
-              for line in lines[:10]:
-                  print(f"  {line}")
-              
-              for i, line in enumerate(lines):
-                  if '#EXTINF' in line:
-                      # Extract channel name
-                      channel_name = re.search(r'tvg-name="([^"]+)"', line)
-                      if channel_name:
-                          channel_name = channel_name.group(1)
-                          print(f"Found channel: {channel_name}")
-                      else:
-                          print(f"No tvg-name in line: {line}")
-                          continue
-                      # Get the next line (link) which may contain the cookie
-                      link = lines[i + 1].strip() if i + 1 < len(lines) else ''
-                      print(f"Link for {channel_name}: {link}")
-                      # Try multiple cookie formats
-                      cookie_match = (
-                          re.search(r'__hdnea__=[^|&]+', link) or
-                          re.search(r'cookie=[^|&]+', link) or
-                          re.search(r'[^|&?]+\=[^|&]+', link)  # Generic key=value
-                      )
-                      if cookie_match:
-                          cookie = cookie_match.group(0)
-                          cookies[channel_name] = cookie
-                          print(f"Found cookie for {channel_name}: {cookie}")
-                      else:
-                          print(f"No cookie found in link: {link}")
-              if not cookies:
-                  print("No cookies found in M3U file")
-              else:
-                  print(f"Extracted cookies for {len(cookies)} channels")
-              return cookies
-
-          def update_json_playlist(playlist_file, cookies):
-              """Update cookies in the JSON playlist."""
+          def update_json_playlist(playlist_file, cookie):
+              """Update cookie in all entries of the JSON playlist."""
               try:
                   with open(playlist_file, 'r') as f:
                       playlist = json.load(f)
@@ -101,14 +69,10 @@ jobs:
                   # Assuming playlist is a list of channel objects
                   updated = False
                   for channel in playlist:
-                      channel_name = channel.get('name')
-                      if channel_name in cookies:
-                          old_cookie = channel.get('cookie', 'None')
-                          channel['cookie'] = cookies[channel_name]
-                          updated = True
-                          print(f"Updated cookie for {channel_name}: {old_cookie} -> {cookies[channel_name]}")
-                      else:
-                          print(f"No cookie found for channel {channel_name}")
+                      old_cookie = channel.get('cookie', 'None')
+                      channel['cookie'] = cookie
+                      updated = True
+                      print(f"Updated cookie for {channel.get('name')}: {old_cookie} -> {cookie}")
                   
                   if updated:
                       # Write updated JSON back to file
@@ -116,25 +80,19 @@ jobs:
                           json.dump(playlist, f, indent=2)
                       print(f"Updated cookies in {playlist_file}")
                   else:
-                      print("No matching channels found to update cookies")
+                      print("No channels found to update cookies")
               except Exception as e:
                   print(f"Error updating JSON playlist: {e}")
 
           def main():
-              # Fetch M3U content
-              m3u_content = fetch_m3u_content(MAIN_URL)
-              if not m3u_content:
-                  print("Failed to fetch M3U content, exiting")
-                  return
-              
-              # Parse cookies from M3U
-              cookies = parse_m3u_cookies(m3u_content)
-              if not cookies:
-                  print("No cookies to update, exiting")
+              # Fetch cookie from JSON
+              cookie = fetch_cookie(MAIN_URL)
+              if not cookie:
+                  print("No cookie to update, exiting")
                   return
               
               # Update JSON playlist
-              update_json_playlist(PLAYLIST_FILE, cookies)
+              update_json_playlist(PLAYLIST_FILE, cookie)
 
           if __name__ == '__main__':
               main()
