@@ -115,8 +115,11 @@ jobs:
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
+
           git add Jiotv.json
-          if git diff --quiet || ! git diff --staged --quiet; then
+
+          # If there are **any** staged changes, commit & push
+          if ! git diff --staged --quiet; then
             git commit -m "Update single __hdnea__ cookie for all channels in Jiotv.json from API"
             git push
           else
