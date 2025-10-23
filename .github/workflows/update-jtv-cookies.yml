@@ -1,4 +1,4 @@
-name: Update Cookie from Any Channel in Worker JSON
+name: Update Cookie in Jiotv.json (FIXED)
 
 on:
   schedule:
@@ -12,18 +12,36 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: from actions/setup-python@v4
         with:
           python-version: '3.11'
 
       - name: Install Requests
         run: pip install requests
 
-      - name: Get Cookie from Worker JSON & Update Jiotv.json
+      - name: Debug - List Files
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Files in repo:"
+          ls -la
+          echo "Checking for Jiotv.json..."
+          if [ -f "Jiotv.json" ]; then
+            echo "Jiotv.json FOUND!"
+            echo "Content preview:"
+            head -20 Jiotv.json
+          else
+            echo "Jiotv.json NOT FOUND!"
+            exit 1
+          fi
+
+      - name: Extract Cookie & Update Jiotv.json
         run: |
           python - <<'PY'
           import json
@@ -36,93 +54,86 @@ jobs:
           TIMEOUT = 30
           MAX_RETRIES = 3
 
-          def get_cookie_from_worker():
-              print(f"Fetching JSON from: {WORKER_URL}")
+          def get_cookie():
+              print(f"Fetching from: {WORKER_URL}")
               for attempt in range(1, MAX_RETRIES + 1):
                   try:
-                      print(f"  → Attempt {attempt}...")
-                      response = requests.get(WORKER_URL, timeout=TIMEOUT)
-                      response.raise_for_status()
-                      data = response.json()
-                      if not isinstance(data, dict) or len(data) == 0:
-                          print("No channels in JSON.")
+                      print(f"  → Attempt {attempt}")
+                      resp = requests.get(WORKER_URL, timeout=TIMEOUT)
+                      resp.raise_for_status()
+                      data = resp.json()
+                      if not data:
                           continue
-
-                      # Koi bhi ek channel ka URL le lo
-                      first_channel = next(iter(data.values()))
-                      if 'url' not in first_channel:
-                          print("No 'url' in channel data.")
+                      url = next(iter(data.values())).get('url', '')
+                      if not url:
                           continue
-
-                      channel_url = first_channel['url']
-                      print(f"Using channel URL: {channel_url[:100]}...")
-
-                      # Extract __hdnea__ from URL
-                      parsed = urlparse(channel_url)
-                      params = parse_qs(parsed.query)
-                      hdnea = params.get('__hdnea__', [])
+                      parsed = urlparse(url)
+                      hdnea = parse_qs(parsed.query).get('__hdnea__', [])
                       if hdnea:
                           cookie = f"__hdnea__={hdnea[0]}"
-                          print(f"EXTRACTED COOKIE: {cookie}")
+                          print(f"SUCCESS: Cookie = {cookie}")
                           return cookie
-                      else:
-                          print("No __hdnea__ in channel URL.")
                   except Exception as e:
                       print(f"  Failed: {e}")
-                      if attempt < MAX_RETRIES:
-                          import time; time.sleep(5)
               return None
 
-          # Load your playlist
+          # Load playlist
           if not os.path.exists(PLAYLIST_FILE):
-              print(f"{PLAYLIST_FILE} not found! Create it first.")
+              print(f"{PLAYLIST_FILE} missing!")
               exit(1)
 
-          try:
-              with open(PLAYLIST_FILE, 'r', encoding='utf-8') as f:
-                  playlist = json.load(f)
-          except Exception as e:
-              print(f"Error reading playlist: {e}")
-              exit(1)
+          with open(PLAYLIST_FILE, 'r', encoding='utf-8') as f:
+              playlist = json.load(f)
 
           if not isinstance(playlist, list) or len(playlist) == 0:
-              print("Playlist is empty!")
+              print("Playlist empty!")
               exit(1)
 
-          # Get fresh cookie
-          new_cookie = get_cookie_from_worker()
+          # Get new cookie
+          new_cookie = get_cookie()
           if not new_cookie:
-              print("Failed to extract cookie.")
+              print("No cookie extracted!")
               exit(1)
 
-          # Update ALL channels
-          updated = False
-          for i, ch in enumerate(playlist):
-              old = ch.get("cookie", "")
-              if old != new_cookie:
+          # Update ALL
+          updated = 0
+          for ch in playlist:
+              if ch.get("cookie") != new_cookie:
                   ch["cookie"] = new_cookie
-                  name = ch.get("name", "Unknown")
-                  print(f"Updated [{i+1}] {name}")
-                  updated = True
+                  updated += 1
 
-          if not updated:
-              print("No changes.")
-              exit(0)
+          print(f"Updating {updated} channels with new cookie...")
 
           # Save
           with open(PLAYLIST_FILE, 'w', encoding='utf-8') as f:
               json.dump(playlist, f, indent=2, ensure_ascii=False)
-          print(f"{PLAYLIST_FILE} updated with {len(playlist)} channels!")
 
+          print(f"{PLAYLIST_FILE} SAVED!")
           PY
 
-      - name: Commit & Push
+      - name: Debug - Show Updated File
+        run: |
+          echo "Updated Jiotv.json:"
+          cat Jiotv.json | grep -A1 -B1 "__hdnea__"
+          echo ""
+          echo "File size: $(wc -c < Jiotv.json) bytes"
+
+      - name: Commit & Push (FORCE UPDATE)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Jiotv.json
-          git diff --quiet && echo "No changes" && exit 0
-          git commit -m "Auto: Updated cookie from worker JSON"
-          git push
+          
+          # Force add
+          git add -A
+          
+          # Check diff
+          git status
+          git diff --staged --quiet && echo "No changes detected" || echo "Changes detected!"
+          
+          # Commit
+          git commit -m "Auto: Updated cookie in Jiotv.json (run #${{ github.run_number }})" || echo "Nothing to commit"
+          
+          # Push
+          git push origin HEAD:${{ github.ref_name }} --force-with-lease
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
