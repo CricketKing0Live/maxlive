@@ -1,8 +1,8 @@
-name: Update Cookie in Jiotv.json (FIXED)
+name: Update JioTV Cookie (FIXED)
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # Har 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -18,24 +18,20 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
-        uses: from actions/setup-python@v4
+        uses: actions/setup-python@v4   # FIXED: "from" hata diya
         with:
           python-version: '3.11'
 
       - name: Install Requests
         run: pip install requests
 
-      - name: Debug - List Files
+      - name: Debug - Check Files
         run: |
-          echo "Current directory:"
-          pwd
+          echo "Current Path: $(pwd)"
           echo "Files in repo:"
           ls -la
-          echo "Checking for Jiotv.json..."
           if [ -f "Jiotv.json" ]; then
             echo "Jiotv.json FOUND!"
-            echo "Content preview:"
-            head -20 Jiotv.json
           else
             echo "Jiotv.json NOT FOUND!"
             exit 1
@@ -51,30 +47,24 @@ jobs:
 
           WORKER_URL = "https://jo-json.vodep39240327.workers.dev/"
           PLAYLIST_FILE = "Jiotv.json"
-          TIMEOUT = 30
-          MAX_RETRIES = 3
 
           def get_cookie():
-              print(f"Fetching from: {WORKER_URL}")
-              for attempt in range(1, MAX_RETRIES + 1):
-                  try:
-                      print(f"  → Attempt {attempt}")
-                      resp = requests.get(WORKER_URL, timeout=TIMEOUT)
-                      resp.raise_for_status()
-                      data = resp.json()
-                      if not data:
-                          continue
-                      url = next(iter(data.values())).get('url', '')
-                      if not url:
-                          continue
-                      parsed = urlparse(url)
-                      hdnea = parse_qs(parsed.query).get('__hdnea__', [])
-                      if hdnea:
-                          cookie = f"__hdnea__={hdnea[0]}"
-                          print(f"SUCCESS: Cookie = {cookie}")
-                          return cookie
-                  except Exception as e:
-                      print(f"  Failed: {e}")
+              try:
+                  print(f"Fetching JSON from {WORKER_URL}")
+                  resp = requests.get(WORKER_URL, timeout=30)
+                  resp.raise_for_status()
+                  data = resp.json()
+                  if not data:
+                      return None
+                  url = next(iter(data.values())).get('url', '')
+                  if not url:
+                      return None
+                  parsed = urlparse(url)
+                  hdnea = parse_qs(parsed.query).get('__hdnea__', [])
+                  if hdnea:
+                      return f"__hdnea__={hdnea[0]}"
+              except Exception as e:
+                  print(f"Error: {e}")
               return None
 
           # Load playlist
@@ -89,51 +79,35 @@ jobs:
               print("Playlist empty!")
               exit(1)
 
-          # Get new cookie
           new_cookie = get_cookie()
           if not new_cookie:
-              print("No cookie extracted!")
+              print("Failed to get cookie!")
               exit(1)
 
-          # Update ALL
           updated = 0
           for ch in playlist:
               if ch.get("cookie") != new_cookie:
                   ch["cookie"] = new_cookie
                   updated += 1
 
-          print(f"Updating {updated} channels with new cookie...")
-
-          # Save
+          print(f"Updating {updated} channels...")
           with open(PLAYLIST_FILE, 'w', encoding='utf-8') as f:
               json.dump(playlist, f, indent=2, ensure_ascii=False)
 
-          print(f"{PLAYLIST_FILE} SAVED!")
+          print(f"{PLAYLIST_FILE} UPDATED SUCCESSFULLY!")
           PY
 
-      - name: Debug - Show Updated File
+      - name: Show Updated Cookie
         run: |
-          echo "Updated Jiotv.json:"
-          cat Jiotv.json | grep -A1 -B1 "__hdnea__"
-          echo ""
-          echo "File size: $(wc -c < Jiotv.json) bytes"
+          echo "Updated Cookie in Jiotv.json:"
+          grep -A2 -B2 "__hdnea__" Jiotv.json || echo "No cookie found"
 
-      - name: Commit & Push (FORCE UPDATE)
+      - name: Commit & Push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Force add
-          git add -A
-          
-          # Check diff
-          git status
-          git diff --staged --quiet && echo "No changes detected" || echo "Changes detected!"
-          
-          # Commit
-          git commit -m "Auto: Updated cookie in Jiotv.json (run #${{ github.run_number }})" || echo "Nothing to commit"
-          
-          # Push
-          git push origin HEAD:${{ github.ref_name }} --force-with-lease
+          git add Jiotv.json
+          git commit -m "Auto: Updated JioTV cookie (run #${{ github.run_number }})" || echo "No changes"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
