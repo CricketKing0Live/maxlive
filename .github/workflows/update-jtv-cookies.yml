@@ -1,23 +1,21 @@
-# .github/workflows/update-jiotv-cookies.yml
-
-name: Update JioTV Cookies in Jiotv.json
+name: Update JioTV Cookie in Jiotv.json
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # Har 6 ghante mein (UTC)
-  workflow_dispatch:        # Manual run allowed
+    - cron: '0 */6 * * *'   # Har 6 ghante
+  workflow_dispatch:
 
 jobs:
-  update-cookies:
+  update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # Git push ke liye
+      contents: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
@@ -25,75 +23,100 @@ jobs:
       - name: Install Requests
         run: pip install requests
 
-      - name: Create/Update Jiotv.json with Fresh Cookies
+      - name: Fetch Cookie & Update Jiotv.json
         run: |
           python - <<'PY'
           import json
           import requests
           import os
+          import time
 
-          URL = "https://jo-json.vodep39240327.workers.dev"
-          PLAYLIST = "Jiotv.json"
+          # CONFIG
+          CHANNEL_URL = "https://jo-json.vodep39240327.workers.dev"  # Yeh URL se cookie chahiye
+          PLAYLIST_FILE = "Jiotv.json"
+          TIMEOUT = 30
+          MAX_RETRIES = 3
 
-          def get_cookie():
-              try:
-                  resp = requests.get(URL, timeout=10)
-                  resp.raise_for_status()
-                  cookies = resp.cookies.get_dict()
-                  return "; ".join(f"{k}={v}" for k, v in cookies.items())
-              except Exception as e:
-                  print(f"Cookie fetch failed: {e}")
-                  exit(1)
+          def fetch_cookie():
+              print(f"Fetching cookie from: {CHANNEL_URL}")
+              for attempt in range(1, MAX_RETRIES + 1):
+                  try:
+                      print(f"  → Attempt {attempt}...")
+                      response = requests.get(CHANNEL_URL, timeout=TIMEOUT, allow_redirects=True)
+                      response.raise_for_status()
+                      cookie_str = "; ".join([f"{k}={v}" for k, v in response.cookies.get_dict().items()])
+                      if cookie_str:
+                          print(f"Cookie fetched: {cookie_str[:80]}...")
+                          return cookie_str
+                      else:
+                          print("No cookies found in response.")
+                  except Exception as e:
+                      print(f"  Failed: {e}")
+                      if attempt < MAX_RETRIES:
+                          time.sleep(5)
+              print("All attempts failed.")
+              return None
 
           def load_playlist():
-              if not os.path.exists(PLAYLIST):
-                  print(f"{PLAYLIST} not found! Creating default...")
-                  return [
-                      {
-                          "logo": "https://img.media.jio.com/tvpimages/66/40/302084_1753189751700_l_high.jpg",
-                          "name": "Star Plus",
-                          "link": "http://jiotvbpkmob.cdn.jio.com/bpk-tv/Star_Plus_BTS/output/index.mpd",
-                          "drmScheme": "clearkey",
-                          "drmLicense": "3bba2ffaf08b501796c5d9eb431460a4:7a62074c4c46f3b153259526481c02bf",
-                          "cookie": ""
-                      }
-                  ]
-              with open(PLAYLIST, 'r', encoding='utf-8') as f:
-                  return json.load(f)
+              if not os.path.exists(PLAYLIST_FILE):
+                  print(f"{PLAYLIST_FILE} not found. Creating default...")
+                  return [{
+                      "logo": "https://img.media.jio.com/tvpimages/66/40/302084_1753189751700_l_high.jpg",
+                      "name": "Star Plus",
+                      "link": "http://jiotvbpkmob.cdn.jio.com/bpk-tv/Star_Plus_BTS/output/index.mpd",
+                      "drmScheme": "clearkey",
+                      "drmLicense": "3bba2ffaf08b501796c5d9eb431460a4:7a62074c4c46f3b153259526481c02bf",
+                      "cookie": ""
+                  }]
+              try:
+                  with open(PLAYLIST_FILE, 'r', encoding='utf-8') as f:
+                      data = json.load(f)
+                  if isinstance(data, list) and len(data) > 0:
+                      return data
+                  print("Invalid playlist format.")
+                  return []
+              except Exception as e:
+                  print(f"Error reading playlist: {e}")
+                  return []
 
           def save_playlist(data):
-              with open(PLAYLIST, 'w', encoding='utf-8') as f:
+              with open(PLAYLIST_FILE, 'w', encoding='utf-8') as f:
                   json.dump(data, f, indent=2, ensure_ascii=False)
+              print(f"{PLAYLIST_FILE} saved.")
 
-          # Main
-          new_cookie = get_cookie()
-          print(f"New Cookie: {new_cookie[:100]}...")
+          # MAIN
+          new_cookie = fetch_cookie()
+          if not new_cookie:
+              print("Failed to get cookie. Exiting.")
+              exit(1)
 
           playlist = load_playlist()
-          if not isinstance(playlist, list):
-              print("Invalid playlist format!")
+          if not playlist:
+              print("No channels to update.")
               exit(1)
 
           updated = False
           for ch in playlist:
-              if "cookie" in ch and ch["cookie"] != new_cookie:
-                  ch["cookie"] = new_cookie
-                  print(f"Updated: {ch.get('name', 'Unknown')}")
-                  updated = True
+              if "cookie" in ch:
+                  old = ch["cookie"]
+                  if old != new_cookie:
+                      ch["cookie"] = new_cookie
+                      print(f"Updated cookie for: {ch.get('name', 'Unknown')}")
+                      updated = True
 
-          if updated or not os.path.exists(PLAYLIST):
+          if updated or not os.path.exists(PLAYLIST_FILE):
               save_playlist(playlist)
-              print("Jiotv.json updated.")
           else:
-              print("No changes needed.")
+              print("No changes in cookies.")
           PY
 
-      - name: Commit & Push Jiotv.json
+      - name: Commit & Push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Jiotv.json
-          git commit -m "Auto: Updated cookies in Jiotv.json" || echo "No changes"
+          git diff --quiet && echo "No changes" && exit 0
+          git commit -m "Auto: Updated cookie in Jiotv.json"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
