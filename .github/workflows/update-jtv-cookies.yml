@@ -1,129 +1,99 @@
-name: Update JioTV Playlist Cookies
+# .github/workflows/update-jiotv-cookies.yml
+
+name: Update JioTV Cookies in Jiotv.json
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Runs every 6 hours
-  workflow_dispatch: # Allows manual trigger
+    - cron: '0 */6 * * *'   # Har 6 ghante mein (UTC)
+  workflow_dispatch:        # Manual run allowed
 
 jobs:
   update-cookies:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # Git push ke liye
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+      - name: Install Requests
+        run: pip install requests
 
-      - name: Update cookies in Jiotv.json
+      - name: Create/Update Jiotv.json with Fresh Cookies
         run: |
-          python -c '
+          python - <<'PY'
           import json
           import requests
-          from urllib.parse import urlparse, parse_qs
+          import os
 
-          # Configuration
-          API_URL = "https://jo-json.vodep39240327.workers.dev"
-          PLAYLIST_FILE = "Jiotv.json"
+          URL = "https://jo-json.vodep39240327.workers.dev"
+          PLAYLIST = "Jiotv.json"
 
-          def extract_hdnea_from_url(url):
-              """Extract __hdnea__ cookie from MPD URL."""
+          def get_cookie():
               try:
-                  parsed = urlparse(url)
-                  query = parse_qs(parsed.query)
-                  cookie = query.get("__hdnea__", [None])[0]
-                  if cookie:
-                      return f"__hdnea__={cookie}"
-                  return None
-              except:
-                  return None
-
-          def fetch_single_cookie():
-              """Fetch a single __hdnea__ cookie from the API."""
-              try:
-                  response = requests.get(API_URL)
-                  response.raise_for_status()
-                  data = response.json()
-                  print(f"Fetched API data for {len(data)} channels")
-                  # Pick the first valid cookie from the API response
-                  for channel_id, info in data.items():
-                      if isinstance(info, dict) and "url" in info:
-                          cookie = extract_hdnea_from_url(info["url"])
-                          if cookie:
-                              print(f"Using cookie from channel ID {channel_id}: {cookie}")
-                              return cookie
-                  print("No valid cookies found in API response")
-                  return None
-              except requests.RequestException as e:
-                  print(f"Error fetching data from {API_URL}: {e}")
-                  return None
-              except ValueError as e:
-                  print(f"Error parsing JSON from {API_URL}: {e}")
-                  return None
-
-          def update_playlist_cookies():
-              # Read the existing playlist
-              try:
-                  with open(PLAYLIST_FILE, "r") as file:
-                      playlist = json.load(file)
+                  resp = requests.get(URL, timeout=10)
+                  resp.raise_for_status()
+                  cookies = resp.cookies.get_dict()
+                  return "; ".join(f"{k}={v}" for k, v in cookies.items())
               except Exception as e:
-                  print(f"Error reading {PLAYLIST_FILE}: {e}")
-                  return
+                  print(f"Cookie fetch failed: {e}")
+                  exit(1)
 
-              # Fetch a single cookie from API
-              new_cookie = fetch_single_cookie()
-              if not new_cookie:
-                  print("No valid cookie retrieved from API, exiting.")
-                  return
+          def load_playlist():
+              if not os.path.exists(PLAYLIST):
+                  print(f"{PLAYLIST} not found! Creating default...")
+                  return [
+                      {
+                          "logo": "https://img.media.jio.com/tvpimages/66/40/302084_1753189751700_l_high.jpg",
+                          "name": "Star Plus",
+                          "link": "http://jiotvbpkmob.cdn.jio.com/bpk-tv/Star_Plus_BTS/output/index.mpd",
+                          "drmScheme": "clearkey",
+                          "drmLicense": "3bba2ffaf08b501796c5d9eb431460a4:7a62074c4c46f3b153259526481c02bf",
+                          "cookie": ""
+                      }
+                  ]
+              with open(PLAYLIST, 'r', encoding='utf-8') as f:
+                  return json.load(f)
 
-              # Update the same cookie for all channels
-              updated = False
-              for channel in playlist:
-                  channel_name = channel.get("name")
-                  if not channel_name:
-                      continue
-                  old_cookie = channel.get("cookie")
-                  if new_cookie != old_cookie:
-                      channel["cookie"] = new_cookie
-                      updated = True
-                      print(f"Updated cookie for {channel_name} to {new_cookie}")
+          def save_playlist(data):
+              with open(PLAYLIST, 'w', encoding='utf-8') as f:
+                  json.dump(data, f, indent=2, ensure_ascii=False)
 
-              # Save updated playlist if changes were made
-              if updated:
-                  try:
-                      with open(PLAYLIST_FILE, "w") as file:
-                          json.dump(playlist, file, indent=2)
-                      print(f"Successfully updated {PLAYLIST_FILE}")
-                  except Exception as e:
-                      print(f"Error writing to {PLAYLIST_FILE}: {e}")
-              else:
-                  print("No cookie updates required")
+          # Main
+          new_cookie = get_cookie()
+          print(f"New Cookie: {new_cookie[:100]}...")
 
-          if __name__ == "__main__":
-              update_playlist_cookies()
-          '
+          playlist = load_playlist()
+          if not isinstance(playlist, list):
+              print("Invalid playlist format!")
+              exit(1)
 
-      - name: Commit changes
+          updated = False
+          for ch in playlist:
+              if "cookie" in ch and ch["cookie"] != new_cookie:
+                  ch["cookie"] = new_cookie
+                  print(f"Updated: {ch.get('name', 'Unknown')}")
+                  updated = True
+
+          if updated or not os.path.exists(PLAYLIST):
+              save_playlist(playlist)
+              print("Jiotv.json updated.")
+          else:
+              print("No changes needed.")
+          PY
+
+      - name: Commit & Push Jiotv.json
         run: |
-          git config --global user.name 'GitHub Action'
-          git config --global user.email 'action@github.com'
-
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Jiotv.json
-
-          # If there are **any** staged changes, commit & push
-          if ! git diff --staged --quiet; then
-            git commit -m "Update single __hdnea__ cookie for all channels in Jiotv.json from API"
-            git push
-          else
-            echo "No changes to commit"
-          fi
+          git commit -m "Auto: Updated cookies in Jiotv.json" || echo "No changes"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
