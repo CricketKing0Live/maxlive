@@ -1,4 +1,4 @@
-name: Update Same Cookie in All Channels of Jiotv.json
+name: Update Cookie from Any Channel in Worker JSON
 
 on:
   schedule:
@@ -23,7 +23,7 @@ jobs:
       - name: Install Requests
         run: pip install requests
 
-      - name: Extract Cookie from Worker URL & Update Jiotv.json
+      - name: Get Cookie from Worker JSON & Update Jiotv.json
         run: |
           python - <<'PY'
           import json
@@ -31,80 +31,88 @@ jobs:
           import os
           from urllib.parse import urlparse, parse_qs
 
-          # MAIN URL (Yahan se cookie nikalega)
           WORKER_URL = "https://jo-json.vodep39240327.workers.dev/"
           PLAYLIST_FILE = "Jiotv.json"
           TIMEOUT = 30
           MAX_RETRIES = 3
 
-          def extract_cookie_from_worker():
-              print(f"Fetching cookie from: {WORKER_URL}")
+          def get_cookie_from_worker():
+              print(f"Fetching JSON from: {WORKER_URL}")
               for attempt in range(1, MAX_RETRIES + 1):
                   try:
                       print(f"  → Attempt {attempt}...")
-                      response = requests.get(WORKER_URL, timeout=TIMEOUT, allow_redirects=True)
-                      final_url = response.url
-                      print(f"Final URL: {final_url[:120]}...")
+                      response = requests.get(WORKER_URL, timeout=TIMEOUT)
+                      response.raise_for_status()
+                      data = response.json()
+                      if not isinstance(data, dict) or len(data) == 0:
+                          print("No channels in JSON.")
+                          continue
 
-                      # Extract __, Playlists, Channels
-                      parsed = urlparse(final_url)
+                      # Koi bhi ek channel ka URL le lo
+                      first_channel = next(iter(data.values()))
+                      if 'url' not in first_channel:
+                          print("No 'url' in channel data.")
+                          continue
+
+                      channel_url = first_channel['url']
+                      print(f"Using channel URL: {channel_url[:100]}...")
+
+                      # Extract __hdnea__ from URL
+                      parsed = urlparse(channel_url)
                       params = parse_qs(parsed.query)
                       hdnea = params.get('__hdnea__', [])
                       if hdnea:
                           cookie = f"__hdnea__={hdnea[0]}"
                           print(f"EXTRACTED COOKIE: {cookie}")
                           return cookie
+                      else:
+                          print("No __hdnea__ in channel URL.")
                   except Exception as e:
                       print(f"  Failed: {e}")
                       if attempt < MAX_RETRIES:
                           import time; time.sleep(5)
-              print("All attempts failed.")
               return None
 
-          # Load existing playlist
+          # Load your playlist
           if not os.path.exists(PLAYLIST_FILE):
-              print(f"{PLAYLIST_FILE} not found! Please create it first.")
+              print(f"{PLAYLIST_FILE} not found! Create it first.")
               exit(1)
 
           try:
               with open(PLAYLIST_FILE, 'r', encoding='utf-8') as f:
                   playlist = json.load(f)
           except Exception as e:
-              print(f"Error reading {PLAYLIST_FILE}: {e}")
+              print(f"Error reading playlist: {e}")
               exit(1)
 
           if not isinstance(playlist, list) or len(playlist) == 0:
-              print("Playlist is empty or invalid!")
+              print("Playlist is empty!")
               exit(1)
 
           # Get fresh cookie
-          new_cookie = extract_cookie_from_worker()
+          new_cookie = get_cookie_from_worker()
           if not new_cookie:
-              print("Failed to get cookie. Exiting.")
+              print("Failed to extract cookie.")
               exit(1)
 
-          # Update cookie in ALL channels
+          # Update ALL channels
           updated = False
-          for i, channel in enumerate(playlist):
-              if "cookie" in channel:
-                  old_cookie = channel["cookie"]
-                  if old_cookie != new_cookie:
-                      channel["cookie"] = new_cookie
-                      print(f"Updated [{i+1}] {channel.get('name', 'Unknown')} cookie")
-                      updated = True
-              else:
-                  channel["cookie"] = new_cookie
-                  print(f"Added cookie to [{i+1}] {channel.get('name', 'Unknown')}")
+          for i, ch in enumerate(playlist):
+              old = ch.get("cookie", "")
+              if old != new_cookie:
+                  ch["cookie"] = new_cookie
+                  name = ch.get("name", "Unknown")
+                  print(f"Updated [{i+1}] {name}")
                   updated = True
 
           if not updated:
-              print("No changes needed.")
+              print("No changes.")
               exit(0)
 
-          # Save back
+          # Save
           with open(PLAYLIST_FILE, 'w', encoding='utf-8') as f:
               json.dump(playlist, f, indent=2, ensure_ascii=False)
-          print(f"{PLAYLIST_FILE} updated with new cookie in {len(playlist)} channels!")
+          print(f"{PLAYLIST_FILE} updated with {len(playlist)} channels!")
 
           PY
 
@@ -114,7 +122,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Jiotv.json
           git diff --quiet && echo "No changes" && exit 0
-          git commit -m "Auto: Updated cookie in all channels"
+          git commit -m "Auto: Updated cookie from worker JSON"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
